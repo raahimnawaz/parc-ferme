@@ -11,10 +11,12 @@ dependencies = [
     "pandas>=2.2",
     "pyarrow>=15",
     "requests>=2.31",
+    "scipy>=1.12",
+    "numba>=0.60",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "ruff>=0.4"]
+dev = ["pytest>=8", "ruff>=0.4", "matplotlib>=3.8"]
 
 [project.scripts]
 parc-ferme = "parc_ferme.cli:main"
@@ -35,3 +37,6 @@ select = ["E", "F", "I", "B", "UP"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
+
+[tool.setuptools.package-data]
+parc_ferme = ["**/*.toml"]

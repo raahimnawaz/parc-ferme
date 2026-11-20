@@ -1,0 +1,27 @@
+# 2026 Formula 1 technical rules used by the car model.
+# `source` says where each number comes from. "secondary" means a press or team explainer rather than the
+# FIA text; those values are the first to re-check against the published regulations.
+
+[mass]
+minimum_kg = 768.0            # car + driver, no fuel. secondary: McLaren, F1 Chronicle
+fuel_energy_flow_mj_per_h = 3000.0   # secondary: F1 Chronicle, Honda overview
+fuel_lhv_mj_per_kg = 43.0     # typical lower heating value of a race fuel; not a rule
+
+[power_unit]
+ice_kw = 400.0                # design target, not a rule limit. secondary: F1.com, Honda overview
+mgu_k_kw = 350.0              # secondary: McLaren, F1.com
+mgu_k_taper_start_kph = 290.0 # secondary: McLaren, Motorsport.com
+mgu_k_taper_end_kph = 355.0   # secondary; sources disagree (350 in Overtake mode, 355 otherwise)
+energy_store_mj = 4.0         # usable state-of-charge window. secondary
+harvest_per_lap_mj = 8.5      # secondary; one source says 9
+rev_limit_rpm = 15000.0
+
+[dimensions]
+width_m = 1.9                 # secondary: F1.com
+wheelbase_m = 3.4             # maximum. secondary: F1.com
+
+[active_aero]
+# Straight mode is allowed only inside zones the FIA sets per circuit, each given here as the corners it runs
+# between. "start_finish" runs from the last corner to the first.
+[active_aero.zones]
+15 = [["start_finish"], [3, 4], [5, 7], [9, 10]]   # Catalunya. secondary: F1.com circuit guide

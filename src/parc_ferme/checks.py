@@ -6,13 +6,14 @@ import numpy as np
 import pandas as pd
 
 from . import jolpica, warmup
+from .core import track
 from .laps import reconcile_stints
 from .session import Session
 from .telemetry import lap_trace
 
 SECTOR_TOL_S = 0.01
 DISTANCE_TOL = 0.02
-LAYOUT_TOL = 0.015
+LAYOUT_SHARE = 0.9
 SAMPLE_DT_RANGE = (0.15, 0.40)
 MAX_GAP_S = 1.0
 
@@ -122,11 +123,14 @@ def lap_distance(s: Session, t: pd.DataFrame) -> Check:
 
 
 def layout(s: Session, t: pd.DataFrame) -> Check:
-    ref = s.circuit.centreline_length_m
-    measured = lap_distances(s, t).median()
-    rel = abs(ref - measured) / measured
-    return Check("centreline_matches_layout", rel <= LAYOUT_TOL,
-                 f"TUMFTM centreline {ref:.0f} m vs median driven lap {measured:.0f} m ({100 * rel:.1f}%)")
+    """Share of the raced layout that the centreline database matches. The rest (sections rebuilt since the
+    survey) gets its widths from the database median, and its geometry from the timing feed."""
+    loc = s.location[(s.location.x != 0) | (s.location.y != 0)]
+    ref, _ = track.driven_line(s.circuit.name, loc, t[t.green])
+    _, share = track.transfer_widths(ref, track.from_centreline("db", s.circuit.centreline))
+    return Check("centreline_matches_layout", share >= LAYOUT_SHARE,
+                 f"centreline database matches {100 * share:.0f}% of the raced layout; geometry comes from the "
+                 f"timing feed and unmatched widths from the database median", gating=False)
 
 
 def results(s: Session) -> Check:
