@@ -1,0 +1,62 @@
+import argparse
+import json
+import sys
+
+from . import checks, warmup
+from .circuit import load_circuit
+from .openf1 import fetch_session
+from .paths import REPORTS
+from .session import Session
+
+
+def ingest(args) -> int:
+    meta = fetch_session(args.session_key, refresh=args.refresh)
+    c = load_circuit(meta["circuit_key"], meta["year"])
+    print(f"{c.name}: {len(c.corners)} corners, centreline {c.centreline_length_m:.0f} m")
+    return 0
+
+
+def check(args) -> int:
+    s = Session(args.session_key)
+    results, t = checks.run(s)
+    out = REPORTS / str(s.key)
+    out.mkdir(parents=True, exist_ok=True)
+
+    lines = [f"# {s.name} — data checks", ""]
+    for c in results:
+        mark = "PASS" if c.passed else ("FAIL" if c.gating else "WARN")
+        print(f"{mark:4}  {c.name:26} {c.detail}")
+        lines.append(f"- **{mark}** `{c.name}`: {c.detail}")
+    (out / "checks.md").write_text("\n".join(lines) + "\n")
+    (out / "checks.json").write_text(json.dumps([c.as_dict() for c in results], indent=2))
+
+    t.to_csv(out / "laps.csv", index=False)
+    warmup.compound_summary(t).to_csv(out / "compounds.csv", index=False)
+    warmup.best_long_run(t).to_csv(out / "long_runs.csv", index=False)
+    warmup.stop_pace(t).to_csv(out / "stop_pace.csv", index=False)
+    a, b = args.overlay
+    warmup.overlay(s, t, a, b).to_csv(out / f"overlay_{a}_{b}.csv", index=False)
+    print(f"report: {out}")
+    return 0 if all(c.passed for c in results if c.gating) else 1
+
+
+def main(argv=None) -> int:
+    p = argparse.ArgumentParser(prog="parc-ferme")
+    sub = p.add_subparsers(required=True)
+
+    pi = sub.add_parser("ingest", help="download a session from OpenF1")
+    pi.add_argument("session_key", type=int)
+    pi.add_argument("--refresh", action="store_true", help="download tables already on disk again")
+    pi.set_defaults(func=ingest)
+
+    pc = sub.add_parser("check", help="run the data checks and warm-up analyses on a session")
+    pc.add_argument("session_key", type=int)
+    pc.add_argument("--overlay", nargs=2, default=("HAM", "LEC"), metavar=("A", "B"))
+    pc.set_defaults(func=check)
+
+    args = p.parse_args(argv)
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
