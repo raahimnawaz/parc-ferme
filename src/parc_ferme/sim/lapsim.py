@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 from numba import njit
 
-from ..core.car import RHO_AIR, Car, G
+from ..core.car import Car, G
 from ..core.track import Track
 
 VMAX = 120.0
@@ -45,12 +45,11 @@ class Lap:
 
 @njit(cache=True)
 def qss_speed(k, grade, ds, cla_c, cda_c, cla_z, cda_z, m, mu, roll, eff, ice_w, mguk_w, taper_a, taper_b,
-              v_star, n_iter=3):
+              half_rho, v_star, n_iter=3):
     """Quasi-steady speed at each point of a closed path. Segment i runs from point i to i+1 with length ds[i].
     Forward passes are power- and grip-limited (straight-mode aero where zoned); backward passes are grip-limited
     braking in corner mode."""
     n = k.shape[0]
-    half_rho = 0.5 * RHO_AIR
     v = np.empty(n)
     v_corner = np.empty(n)
     for i in range(n):
@@ -87,7 +86,7 @@ def kernel_args(car: Car, zones: np.ndarray) -> tuple:
     pu = car.rules["power_unit"]
     return (cla_c.astype(float), cda_c.astype(float), cla_z.astype(float), cda_z.astype(float), car.mass, car.mu,
             car.crr * car.mass * G, car.driveline_eff, car.ice_w, car.mguk_w,
-            pu["mgu_k_taper_start_kph"] / 3.6, pu["mgu_k_taper_end_kph"] / 3.6)
+            pu["mgu_k_taper_start_kph"] / 3.6, pu["mgu_k_taper_end_kph"] / 3.6, 0.5 * car.rho)
 
 
 def _speed_profile(line: Track, car: Car, zones: np.ndarray, v_star: float) -> np.ndarray:
@@ -103,7 +102,7 @@ def _trace(line: Track, car: Car, zones: np.ndarray, v: np.ndarray, v_star: floa
     accel = (v_next ** 2 - v ** 2) / (2 * ds)
     straight = zones & (accel > -0.5)
     cda, _ = car.aero(straight)
-    resist = 0.5 * RHO_AIR * cda * v_mid ** 2 + car.crr * m * G + m * G * line.grade()
+    resist = 0.5 * car.rho * cda * v_mid ** 2 + car.crr * m * G + m * G * line.grade()
     f_req = m * accel + resist
     p_wheel = np.maximum(f_req, 0.0) * v_mid
     p_avail = car.driveline_eff * (car.ice_w + np.where(v_mid < v_star, car.mguk_limit_w(v_mid), 0.0))

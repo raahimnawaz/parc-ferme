@@ -15,6 +15,17 @@ import pandas as pd
 RHO_AIR = 1.20
 G = 9.81
 KPH = 1 / 3.6
+R_DRY = 287.05
+R_VAPOUR = 461.5
+
+
+def air_density(pressure_hpa: float, temperature_c: float, humidity_pct: float) -> float:
+    """Moist-air density [kg/m^3] from station pressure, temperature and relative humidity (Tetens vapour
+    pressure). At Barcelona on race day (1000.5 hPa, 30.5 C, 29%) this is 1.142, 4.8% below RHO_AIR."""
+    t = temperature_c + 273.15
+    p_sat = 610.78 * 10 ** (7.5 * temperature_c / (temperature_c + 237.3))
+    p_v = humidity_pct / 100 * p_sat
+    return (100 * pressure_hpa - p_v) / (R_DRY * t) + p_v / (R_VAPOUR * t)
 
 
 @cache
@@ -59,6 +70,7 @@ class Car:
     crr: float = 0.012
     driveline_eff: float = 0.95
     regen_eff: float = 0.85
+    rho: float = RHO_AIR
     rules: dict = field(default_factory=rules, repr=False)
 
     @property

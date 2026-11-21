@@ -16,6 +16,7 @@ DISTANCE_TOL = 0.02
 LAYOUT_SHARE = 0.9
 SAMPLE_DT_RANGE = (0.15, 0.40)
 MAX_GAP_S = 1.0
+SPEED_SCALE_TOL = 0.01
 
 
 @dataclass
@@ -122,6 +123,37 @@ def lap_distance(s: Session, t: pd.DataFrame) -> Check:
                  f"{int((rel <= DISTANCE_TOL).sum())}/{len(rel)} within {100 * DISTANCE_TOL:.0f}%")
 
 
+def speed_scale(s: Session) -> Check:
+    """The speed channel against speed from the position feed, on straights at over 150 km/h. The feed's positions
+    are in true metres (they register onto the surveyed centreline at scale 1.000), so on a straight their spacing
+    over time is an independent speed. Pairs with a timestamp glitch fall outside +-10% and are dropped; the
+    median of the rest is the scale."""
+    loc = s.location[(s.location.x != 0) | (s.location.y != 0)]
+    ratios = []
+    for drv, cd in s.car_data.groupby("driver_number"):
+        p = loc[loc.driver_number == drv].sort_values("date")
+        cd = cd.sort_values("date")
+        if len(p) < 100:
+            continue
+        t0 = min(p.date.iloc[0], cd.date.iloc[0])
+        tp = (p.date - t0).dt.total_seconds().to_numpy()
+        tc = (cd.date - t0).dt.total_seconds().to_numpy()
+        x, y = p.x.to_numpy() / track.FEED_UNITS_PER_M, p.y.to_numpy() / track.FEED_UNITS_PER_M
+        dist, dt = np.hypot(np.diff(x), np.diff(y)), np.diff(tp)
+        heading = np.arctan2(np.diff(y), np.diff(x))
+        straight = np.abs(np.angle(np.exp(1j * np.diff(heading)))) < 0.01
+        straight = np.r_[False, straight] & np.r_[straight, False]
+        v = np.interp(0.5 * (tp[1:] + tp[:-1]), tc, cd.speed.to_numpy(float))
+        ok = straight & (dt > 0.15) & (dt < 0.45) & (v > 150)
+        r = dist[ok] / dt[ok] * 3.6 / v[ok]
+        ratios.append(r[(r > 0.9) & (r < 1.1)])
+    r = np.concatenate(ratios)
+    scale = float(np.median(r))
+    return Check("speed_scale", abs(scale - 1) <= SPEED_SCALE_TOL,
+                 f"speed from positions / speed channel on straights: median {scale:.4f} over {len(r)} sample pairs "
+                 f"(tolerance {100 * SPEED_SCALE_TOL:.0f}%)")
+
+
 def layout(s: Session, t: pd.DataFrame) -> Check:
     """Share of the raced layout that the centreline database matches. The rest (sections rebuilt since the
     survey) gets its widths from the database median, and its geometry from the timing feed."""
@@ -164,5 +196,5 @@ def warmups(t: pd.DataFrame) -> list[Check]:
 def run(s: Session) -> tuple[list[Check], pd.DataFrame]:
     t = warmup.laps(s)
     checks = [drivers(s), lap_count(s), sectors(s), *stints(s), pits(s), car_data_rate(s),
-              lap_distance(s, t), layout(s, t), results(s), *warmups(t)]
+              lap_distance(s, t), speed_scale(s), layout(s, t), results(s), *warmups(t)]
     return checks, t
