@@ -5,7 +5,7 @@ import sys
 from . import checks, warmup
 from .circuit import load_circuit
 from .openf1 import fetch_session
-from .paths import REPORTS
+from .paths import REPORTS, SITE
 from .session import Session
 
 
@@ -66,68 +66,75 @@ def sim(args) -> int:
 
 def grip(args) -> int:
     import numpy as np
-    import pandas as pd
 
-    from .core.car import Car, air_density
+    from .core.car import Car
     from .models import grip as S3
-    from .sim.model import circuit_model, run
-    from .telemetry import placed_samples
+    from .sim.model import run
 
     s = Session(args.session_key)
     t = warmup.laps(s)
-    wx = s.weather
-    rho = air_density(wx.pressure.median(), wx.air_temperature.median(), wx.humidity.median())
-    car = Car(fuel_kg=S3.FUEL_AVG_KG, rho=rho)
-    model = circuit_model(s, car, t)
-    samples = placed_samples(s.car_data, s.location, t[t.green], model.reference)
-    all_minima = S3.corner_minima(samples, model.corner_fraction)
-    minima = S3.grip_limited(all_minima)
-    used = sorted(minima.corner.unique())
-    v_ref = minima.groupby("corner").v.median()
-    for _ in range(2):  # the line depends on the car: fit, search the line for the fitted car, fit again
-        field = S3.fit_car(model.line, model.zones, car, model.corner_fraction, v_ref)
-        car = field.car
-        model = circuit_model(s, car, t)
-    field = S3.fit_car(model.line, model.zones, car, model.corner_fraction, v_ref)
-    w = pd.Series(S3.aero_share(v_ref, field.car.mu, field.car.cla_corner, car.mass, rho), index=v_ref.index)
-    rel = S3.relative_grip(minima, w)
-
-    anchors = S3.straight_anchors(model.reference)
-    driven = S3.path_lengths(samples, model.reference.s[anchors], model.reference.length)
-    sections = pd.DataFrame({"from_m": model.reference.s[anchors][:-1], "to_m": model.reference.s[anchors][1:],
-                             "driven_m": driven, "line_m": S3.line_lengths(model.line, model.reference, anchors)})
-    sections["line_short_m"] = sections.driven_m - sections.line_m
-
+    g = S3.analyse(s, t)
     team = s.teams[int(t[t.driver == args.driver].driver_number.iloc[0])]
-    r = rel.set_index("team").loc[team]
-    fitted = Car(fuel_kg=args.fuel, rho=rho, mu=field.car.mu * np.exp(r.mech_pct / 100),
-                 cla_corner=field.car.cla_corner * np.exp(r.downforce_pct / 100))
+    r = g.relative.set_index("team").loc[team]
+    fitted = Car(fuel_kg=args.fuel, rho=g.rho, mu=g.field.car.mu * np.exp(r.mech_pct / 100),
+                 cla_corner=g.field.car.cla_corner * np.exp(r.downforce_pct / 100))
     _, res = run(s, args.driver, fitted)
 
     out = REPORTS / str(s.key)
     out.mkdir(parents=True, exist_ok=True)
-    rel.to_csv(out / "grip_teams.csv", index=False)
-    field.corners.assign(w=field.corners.corner.map(w)).to_csv(out / "grip_corners.csv", index=False)
-    sections.to_csv(out / "path_lengths.csv", index=False)
+    g.relative.to_csv(out / "grip_teams.csv", index=False)
+    g.field.corners.assign(w=g.field.corners.corner.map(g.w)).to_csv(out / "grip_corners.csv", index=False)
+    g.sections.to_csv(out / "path_lengths.csv", index=False)
     res.corners.to_csv(out / f"sim_corners_fitted_{args.driver}.csv", index=False)
-    summary = {"air_density": rho, "mass_kg": car.mass, "field_mu": field.car.mu, "field_cla": field.car.cla_corner,
-               "field_corner_rms_kph": field.rms_kph, "corners_used": [int(c) for c in used],
-               "corners_flat_out": sorted(int(c) for c in set(all_minima.corner) - set(used)),
-               "laps": rel.attrs["laps"], "w_slow": rel.attrs["w_slow"], "w_fast": rel.attrs["w_fast"],
+    summary = {"air_density": g.rho, "mass_kg": g.field.car.mass, "field_mu": g.field.car.mu,
+               "field_cla": g.field.car.cla_corner, "field_corner_rms_kph": g.field.rms_kph,
+               "corners_used": sorted(int(c) for c in g.minima.corner.unique()), "corners_flat_out": g.flat_out,
+               "laps": g.relative.attrs["laps"], "w_slow": g.relative.attrs["w_slow"],
+               "w_fast": g.relative.attrs["w_fast"],
                "fitted_car": {"team": team, "mu": fitted.mu, "cla_corner": fitted.cla_corner},
                "fitted_vs_" + args.driver: res.summary}
     (out / "grip.json").write_text(json.dumps(summary, indent=2, default=float))
 
-    print(f"air density {rho:.3f} kg/m3; field mu {field.car.mu:.2f}, ClA {field.car.cla_corner:.2f} "
-          f"(corner misfit {field.rms_kph:.1f} km/h rms on the modelled line); {rel.attrs['laps']} laps, "
-          f"corners {[int(c) for c in used]}")
-    print(field.corners.round(1).to_string(index=False))
-    print(rel.round(2).to_string(index=False))
-    print(sections.round(1).to_string(index=False))
+    print(f"air density {g.rho:.3f} kg/m3; field mu {g.field.car.mu:.2f}, ClA {g.field.car.cla_corner:.2f} "
+          f"(corner misfit {g.field.rms_kph:.1f} km/h rms on the modelled line); {g.relative.attrs['laps']} laps, "
+          f"flat out: {g.flat_out}")
+    print(g.field.corners.round(1).to_string(index=False))
+    print(g.relative.round(2).to_string(index=False))
+    print(g.sections.round(1).to_string(index=False))
     print(f"fitted {team} car vs {args.driver}: corner bias {res.summary['corner_min_bias_kph']:+.1f} km/h, "
           f"speed rms {res.summary['speed_rms_kph']:.1f} km/h, lap {res.summary['sim_lap_s']:.2f} s "
           f"vs {res.summary['real_lap_s']:.2f} s")
     print(f"report: {out}")
+    return 0
+
+
+def debrief(args) -> int:
+    from .debrief.build import build
+
+    s = Session(args.session_key)
+    d = build(s)
+    gating = [c for c in d["checks"] if c["gating"] and not c["passed"]]
+    if gating:
+        for c in gating:
+            print(f"FAIL  {c['name']:26} {c['detail']}")
+        print("not published: a gating data check failed")
+        return 1
+    out = REPORTS / str(s.key)
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "debrief.json").write_text(json.dumps(d, indent=1, default=float))
+    for f in d["summary"]:
+        print("-", f["text"])
+    return site(args)
+
+
+def site(args) -> int:
+    from .site import render
+
+    debriefs = [json.loads(p.read_text()) for p in sorted(REPORTS.glob("*/debrief.json"))]
+    pages = render.write(SITE, debriefs)
+    for p in pages:
+        print(f"page: {p}")
+    print(f"index: {SITE / 'index.html'}")
     return 0
 
 
@@ -156,6 +163,13 @@ def main(argv=None) -> int:
     pg.add_argument("--driver", default="HAM", help="driver whose lap the fitted car is compared with")
     pg.add_argument("--fuel", type=float, default=20.0, help="fuel load assumed for the compared lap [kg]")
     pg.set_defaults(func=grip)
+
+    pd_ = sub.add_parser("debrief", help="build a session's debrief and rebuild the site")
+    pd_.add_argument("session_key", type=int)
+    pd_.set_defaults(func=debrief)
+
+    pw = sub.add_parser("site", help="rebuild the site from every debrief already built")
+    pw.set_defaults(func=site)
 
     args = p.parse_args(argv)
     return args.func(args)

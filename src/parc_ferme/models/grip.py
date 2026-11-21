@@ -196,3 +196,56 @@ def line_lengths(line: Track, ref: Track, anchors: np.ndarray) -> np.ndarray:
 
     s, _ = Registration.identity().project(line, ref.x[anchors], ref.y[anchors])
     return np.diff(line.lap_distance(s)) % line.length
+
+
+@dataclass
+class GripAnalysis:
+    rho: float
+    field: FieldFit
+    relative: pd.DataFrame
+    w: pd.Series
+    minima: pd.DataFrame
+    flat_out: list
+    sections: pd.DataFrame
+    model: object
+    clean_air: pd.DataFrame | None
+    corner_kph: pd.Series
+
+
+def analyse(s, laps: pd.DataFrame, clean_gap_s: float = 1.5) -> GripAnalysis:
+    """S3 for an ingested session. `laps` is the lap table (warmup.laps); with a gap_ahead column, the team
+    comparison is repeated on laps with no car within `clean_gap_s` ahead, as a check on dirty air."""
+    from ..core.car import air_density
+    from ..sim.model import circuit_model
+    from ..telemetry import placed_samples
+
+    wx = s.weather
+    rho = air_density(wx.pressure.median(), wx.air_temperature.median(), wx.humidity.median())
+    car = Car(fuel_kg=FUEL_AVG_KG, rho=rho)
+    model = circuit_model(s, car, laps)
+    samples = placed_samples(s.car_data, s.location, laps[laps.green], model.reference)
+    all_minima = corner_minima(samples, model.corner_fraction)
+    minima = grip_limited(all_minima)
+    v_ref = minima.groupby("corner").v.median()
+    for _ in range(2):  # the line depends on the car: fit, search the line for the fitted car, fit again
+        car = fit_car(model.line, model.zones, car, model.corner_fraction, v_ref).car
+        model = circuit_model(s, car, laps)
+    field = fit_car(model.line, model.zones, car, model.corner_fraction, v_ref)
+    w = pd.Series(aero_share(v_ref, field.car.mu, field.car.cla_corner, car.mass, rho), index=v_ref.index)
+    rel = relative_grip(minima, w)
+
+    clean = None
+    if "gap_ahead" in laps:
+        gap = laps.set_index(["driver_number", "lap_number"]).gap_ahead
+        keys = pd.MultiIndex.from_arrays([minima.driver_number, minima.lap_number])
+        clean = relative_grip(minima[(gap.reindex(keys).to_numpy() >= clean_gap_s)], w)
+        clean.attrs["gap_s"] = clean_gap_s
+
+    anchors = straight_anchors(model.reference)
+    sections = pd.DataFrame({"from_m": model.reference.s[anchors][:-1], "to_m": model.reference.s[anchors][1:],
+                             "driven_m": path_lengths(samples, model.reference.s[anchors], model.reference.length),
+                             "line_m": line_lengths(model.line, model.reference, anchors)})
+    sections["line_short_m"] = sections.driven_m - sections.line_m
+    flat = sorted(int(c) for c in set(all_minima.corner) - set(minima.corner))
+    corner_kph = 3.6 * all_minima.groupby("corner").v.median()
+    return GripAnalysis(rho, field, rel, w, minima, flat, sections, model, clean, corner_kph)

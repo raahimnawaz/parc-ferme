@@ -88,6 +88,25 @@ Found here:
 - **Lateral position.** The feed places every car on one reference line (Hamilton's positions sit within 6 cm of
   it), so it says where a car is around the lap, not across the track.
 
+Step 4: the first debrief page, `parc-ferme debrief`. A static page per session with a summary of three findings,
+race pace and grip, and the checks behind them, built into `_site/` from one JSON document (`debrief.json`) that
+records every number, check and the code version. Plain HTML and CSS, light and dark, readable at phone width, with
+a table view behind every chart. It is not published yet.
+
+Race pace is compared car by car, sector by sector, against the fastest car. Each green lap's three sector times
+are fitted with an effect per car and shared terms for tyre compound, tyre age (a slope per compound), lap number
+(fuel burn and track evolution) and traffic (the smallest gap to the car ahead during the lap). Per car, not per
+team: pooling both drivers put Mercedes ahead of Ferrari on pace in a race Hamilton won by 19.6 s, because Leclerc
+had a much slower race.
+
+| | |
+|---|---|
+| Barcelona | Hamilton's Ferrari fastest; Russell's Mercedes +0.16 ± 0.07 s a lap, Antonelli +0.23, Norris +0.29, Verstappen +0.43, Leclerc +0.62. Russell was 0.07 s quicker than Hamilton through sector 1 and lost 0.18 s in sector 2. |
+| Traffic | Running within 1 s of the car ahead cost 0.20 ± 0.04 s a lap, 0.15 s of it in sector 2 (Turns 4–9); between 1 and 2 s it cost nothing measurable. 41% of green laps had a car within 1.5 s at some point, so the term is fitted rather than those laps dropped. |
+| Held-out laps | Fitted on odd laps, the model predicts even-lap times to 0.29 s (median error), against 0.71 s for each car's own median lap. |
+| Test bench | A synthetic race with known sector gaps, tyre, fuel and traffic effects, noise and wrecked laps: every car's gap in every sector recovered within 0.03 s (tolerance 0.06). |
+| Grip in dirty air | Refitted on laps with no car within 1.5 s ahead, fast-corner grip moves at most 0.5 points; the largest move against its uncertainty is Haas in slow corners (0.9 points, 2.8 standard errors), shown as a warning. |
+
 ## Quick start
 
 ```bash
@@ -96,10 +115,12 @@ uv venv --python 3.12 && uv pip install -e ".[dev]"
 .venv/bin/parc-ferme check 11307      # data checks + warm-up analyses, written to reports/11307/
 .venv/bin/parc-ferme sim 11307        # nominal 2026 car on the minimum-time line vs Hamilton's best lap
 .venv/bin/parc-ferme grip 11307       # S3: grip per team, the fitted field car, driven distance per section
+.venv/bin/parc-ferme debrief 11307    # the debrief page, built into _site/ (refused if a gating check fails)
+.venv/bin/parc-ferme site             # rebuild _site/ from every debrief already built
 .venv/bin/python -m pytest
 ```
 
-`check` exits non-zero if any gating check fails.
+`check` exits non-zero if any gating check fails, and `debrief` won't build a page for a session that fails one.
 
 ## Data
 
@@ -140,7 +161,7 @@ src/parc_ferme/
   telemetry.py  car data cut to a lap, placed on distance or on the reference line
   warmup.py     tyre wear, long-run pace, pit-stop pace, fastest-lap overlay
   checks.py     the data checks
-  cli.py        `parc-ferme ingest` / `check` / `sim` / `grip`
+  cli.py        `parc-ferme ingest` / `check` / `sim` / `grip` / `debrief` / `site`
   core/
     rules_2026.toml  2026 rules, each value with its source
     track.py    S1: layout from the feed, registration, widths, minimum-curvature line
@@ -151,8 +172,16 @@ src/parc_ferme/
     model.py    assembles S1 + S2 for a session and compares with a real lap
   models/
     grip.py     S3: corner minimum speeds, grip per team relative to the field, the field car fitted to corners
+    pace.py     race pace per car and sector, with tyre, fuel and traffic taken out
   bench/
     fake.py     simulated lap rendered as OpenF1-shaped car data and positions
+    grip.py     S3 test bench: synthetic teams with known grip and downforce
+    pace.py     pace test bench: a synthetic race with known gaps and effects
+  debrief/
+    build.py    everything one debrief page shows, as one JSON document
+    summary.py  the three findings, worded only as strongly as the uncertainty allows
+  site/
+    render.py   the static site: one page per session and an index
 ```
 
 Track geometry and the lap sim are ported from [engine-map-pinn](https://github.com/raahimnawaz/engine-map-pinn)
