@@ -5,6 +5,8 @@
 Post-session engineering debriefs for 2026 Formula 1, worked out from public timing data by physics models that
 are checked against what the cars actually did.
 
+> **Builds on** [engine-map-pinn](https://github.com/raahimnawaz/engine-map-pinn), whose track model and lap simulator are ported here and extended for 2026. [vehicle-dynamics-estimation](https://github.com/raahimnawaz/vehicle-dynamics-estimation) (tyres and brakes) and [apex-forecast](https://github.com/raahimnawaz/apex-forecast) (race strategy) are planned to join.
+
 After every session the pipeline publishes the report a trackside performance engineer would want: each team's drag
 and downforce, where it runs out of electric power, how its tyres wore, how its brakes were loaded, and a lap-by-lap
 replay of the strategy calls. Each figure carries an uncertainty and the check it passed.
