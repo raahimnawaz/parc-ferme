@@ -14,6 +14,7 @@ from pathlib import Path
 from ..debrief.summary import corners_text, possessive, team
 from ..debrief.summary import findings as summary_findings
 
+REPO_URL = "https://github.com/raahimnawaz/parc-ferme"
 LIMIT_S = 0.5  # sector cells reach full colour at this many seconds
 MAX_TINT = 0.72
 
@@ -565,7 +566,8 @@ def checks_section(d: dict) -> str:
         f'<tr><td>{status(k)}</td><td><span class="name">{e(n)}</span></td><td class="what">{e(w)}. '
         f'<span style="color:var(--ink)">{e(r)}.</span></td></tr>' for k, n, w, r in model_checks(d))
     code = d["code"]
-    version = e(code["commit"]) + (" with uncommitted changes" if code["dirty"] else "")
+    version = (f'<a href="{REPO_URL}/commit/{e(code["commit"])}">{e(code["commit"])}</a>'
+               + (" with uncommitted changes" if code["dirty"] else ""))
     return f"""<section id="checks"><div class="sec-head"><div class="eyebrow">How far to trust it</div>
 <h2>Checks</h2></div>
 <p>Each model behind the numbers above has to recover known answers on a test bench before it runs on a session,
@@ -649,7 +651,8 @@ only the largest differences stand out. Both are in the table.</p>
 
 {checks_section(d)}
 </main>
-<footer><div class="in"><p>{SOURCES}</p><p>{DISCLAIMER}</p></div></footer>
+<footer><div class="in"><p>{SOURCES} Code, models and test benches: <a href="{REPO_URL}">parc-ferme on
+GitHub</a>, MIT licence.</p><p>{DISCLAIMER}</p></div></footer>
 <script>{SCRIPT}</script>
 </body></html>
 """
@@ -676,7 +679,8 @@ def index(debriefs: list[dict]) -> str:
 data by physics models that are checked against what the cars actually did.</p></section>
 <section><ol class="sessions">{''.join(items)}</ol></section>
 </main>
-<footer><div class="in"><p>{SOURCES}</p><p>{DISCLAIMER}</p></div></footer>
+<footer><div class="in"><p>{SOURCES} Code, models and test benches: <a href="{REPO_URL}">parc-ferme on
+GitHub</a>, MIT licence.</p><p>{DISCLAIMER}</p></div></footer>
 </body></html>
 """
 

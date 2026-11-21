@@ -138,6 +138,21 @@ def site(args) -> int:
     return 0
 
 
+def publish(args) -> int:
+    from .paths import ROOT
+    from .site.publish import PublishError
+    from .site.publish import publish as push_site
+
+    site(args)
+    try:
+        commit = push_site(SITE, ROOT)
+    except PublishError as err:
+        print(f"not published: {err}")
+        return 1
+    print("site unchanged, nothing to publish" if commit is None else f"published {commit[:7]} to gh-pages")
+    return 0
+
+
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="parc-ferme")
     sub = p.add_subparsers(required=True)
@@ -170,6 +185,9 @@ def main(argv=None) -> int:
 
     pw = sub.add_parser("site", help="rebuild the site from every debrief already built")
     pw.set_defaults(func=site)
+
+    pp = sub.add_parser("publish", help="rebuild the site and push it to the gh-pages branch")
+    pp.set_defaults(func=publish)
 
     args = p.parse_args(argv)
     return args.func(args)

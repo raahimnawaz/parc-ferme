@@ -1,5 +1,7 @@
 # parc-ferme
 
+**Live: [raahimnawaz.github.io/parc-ferme](https://raahimnawaz.github.io/parc-ferme/)**
+
 Post-session engineering debriefs for 2026 Formula 1, worked out from public timing data by physics models that
 are checked against what the cars actually did.
 
@@ -91,7 +93,9 @@ Found here:
 Step 4: the first debrief page, `parc-ferme debrief`. A static page per session with a summary of three findings,
 race pace and grip, and the checks behind them, built into `_site/` from one JSON document (`debrief.json`) that
 records every number, check and the code version. Plain HTML and CSS, light and dark, readable at phone width, with
-a table view behind every chart. It is not published yet.
+a table view behind every chart. `parc-ferme publish` pushes the site to the `gh-pages` branch, which GitHub Pages
+serves; it refuses if the code or any page isn't built from a commit. Rebuilding after each session isn't automated
+yet, and only Barcelona is set up (other circuits need their straight-mode zones and a source of track widths).
 
 Race pace is compared car by car, sector by sector, against the fastest car. Each green lap's three sector times
 are fitted with an effect per car and shared terms for tyre compound, tyre age (a slope per compound), lap number
@@ -117,6 +121,7 @@ uv venv --python 3.12 && uv pip install -e ".[dev]"
 .venv/bin/parc-ferme grip 11307       # S3: grip per team, the fitted field car, driven distance per section
 .venv/bin/parc-ferme debrief 11307    # the debrief page, built into _site/ (refused if a gating check fails)
 .venv/bin/parc-ferme site             # rebuild _site/ from every debrief already built
+.venv/bin/parc-ferme publish          # rebuild _site/ and push it to gh-pages (GitHub Pages)
 .venv/bin/python -m pytest
 ```
 
@@ -161,7 +166,7 @@ src/parc_ferme/
   telemetry.py  car data cut to a lap, placed on distance or on the reference line
   warmup.py     tyre wear, long-run pace, pit-stop pace, fastest-lap overlay
   checks.py     the data checks
-  cli.py        `parc-ferme ingest` / `check` / `sim` / `grip` / `debrief` / `site`
+  cli.py        `parc-ferme ingest` / `check` / `sim` / `grip` / `debrief` / `site` / `publish`
   core/
     rules_2026.toml  2026 rules, each value with its source
     track.py    S1: layout from the feed, registration, widths, minimum-curvature line
@@ -182,6 +187,7 @@ src/parc_ferme/
     summary.py  the three findings, worded only as strongly as the uncertainty allows
   site/
     render.py   the static site: one page per session and an index
+    publish.py  the built site onto the gh-pages branch, without touching the working tree
 ```
 
 Track geometry and the lap sim are ported from [engine-map-pinn](https://github.com/raahimnawaz/engine-map-pinn)
