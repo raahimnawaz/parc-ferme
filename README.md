@@ -62,7 +62,9 @@ track evolution) taken out. Slow and fast are the field's slowest and fastest li
 the grip comes from downforce. Uncertainties are leave-one-corner-out, so they include a team's drivers taking a
 different line at one corner, not only lap-to-lap noise. The split into tyre grip and downforce is in
 `grip_teams.csv` but is not resolved at one circuit: its uncertainty is 1–7% per team, and only Audi stands out
-(downforce +8 ± 2%, mechanical grip −5 ± 1%). More circuits, with a wider spread of corner speeds, will separate them.
+(downforce +8 ± 2%, mechanical grip −5 ± 1%). More circuits, with a wider spread of corner speeds, can separate them,
+but only by assuming mechanical grip holds steady while teams change wing level from circuit to circuit; see
+[docs/limits.md](docs/limits.md) for that and for what the feed can't separate in S4–S7.
 
 The field's absolute grip is fitted so the sim's corner minimum speeds match the real ones: mu 1.45 and ClA 4.94 m²
 at the race's air density, on the minimum-time line re-searched for the fitted car. The misfit is 12 km/h rms and it
