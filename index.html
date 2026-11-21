@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>parc-ferme · 2026 debriefs</title>
+<meta name="description" content="Post-session engineering debriefs for 2026 Formula 1, from public timing data.">
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+  --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11, 11, 11, 0.10); --link: #256abf;
+  --s1: #2a78d6; --s2: #eb6834;
+  --div-neg: #2a78d6; --div-pos: #e34948; --div-mid: #f0efec;
+  --good: #0ca30c; --warn: #fab219; --bad: #d03b3b; --info: #898781;
+  --track: #c3c2b7;
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --border: rgba(255, 255, 255, 0.10); --link: #86b6ef;
+    --s1: #3987e5; --s2: #d95926;
+    --div-neg: #3987e5; --div-pos: #e66767; --div-mid: #262625;
+    --track: #52514e;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
+  --grid: #2c2c2a; --axis: #383835; --border: rgba(255, 255, 255, 0.10); --link: #86b6ef;
+  --s1: #3987e5; --s2: #d95926;
+  --div-neg: #3987e5; --div-pos: #e66767; --div-mid: #262625;
+  --track: #52514e;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--page); color: var(--ink);
+  font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
+a { color: var(--link); text-underline-offset: 2px; }
+a:focus-visible, [tabindex]:focus-visible, summary:focus-visible {
+  outline: 2px solid var(--link); outline-offset: 2px; }
+.top { border-bottom: 1px solid var(--border); background: var(--surface); }
+.top .in { max-width: 1080px; margin: 0 auto; padding: 12px 16px; display: flex; gap: 16px;
+  align-items: baseline; justify-content: space-between; }
+.brand { font-weight: 650; letter-spacing: -0.01em; color: var(--ink); text-decoration: none; }
+.top nav a { color: var(--ink-2); text-decoration: none; font-size: 14px; }
+main { max-width: 1080px; margin: 0 auto; padding: 32px 16px 56px; display: flex; flex-direction: column; gap: 48px; }
+h1, h2, h3 { margin: 0; line-height: 1.15; letter-spacing: -0.01em; text-wrap: balance; }
+h1 { font-size: clamp(30px, 5vw, 44px); font-weight: 650; }
+h2 { font-size: 24px; font-weight: 650; }
+h3 { font-size: 18px; font-weight: 600; }
+p { margin: 0; max-width: 72ch; }
+.eyebrow { font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 500; }
+.meta { color: var(--ink-2); }
+section { display: flex; flex-direction: column; gap: 18px; scroll-margin-top: 16px; }
+.sec-head { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--axis); padding-top: 16px; }
+.hero { gap: 12px; }
+.podium { display: flex; flex-wrap: wrap; gap: 8px 24px; margin: 4px 0 0; padding: 0; list-style: none; }
+.podium li { display: flex; gap: 8px; align-items: baseline; }
+.podium .pos { font-weight: 650; font-size: 18px; min-width: 1.2em; }
+.podium .who { font-weight: 600; }
+.podium .sub { color: var(--ink-2); font-size: 14px; }
+.findings { margin: 0; padding: 0; list-style: none; display: grid; gap: 12px; counter-reset: f; }
+.findings li { counter-increment: f; display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 4px 12px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 14px 16px; }
+.findings li::before { content: counter(f); font-weight: 650; color: var(--muted); font-size: 18px; line-height: 1.3; }
+.findings p { font-size: 16px; }
+.findings a { grid-column: 2; font-size: 14px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 16px; }
+.two { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; align-items: start; }
+@media (min-width: 860px) { .two { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
+figure { margin: 0; display: flex; flex-direction: column; gap: 12px; }
+figcaption, .note { font-size: 13.5px; color: var(--ink-2); max-width: 80ch; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13.5px; color: var(--ink-2); }
+.key { display: inline-flex; align-items: center; gap: 6px; }
+.swatch { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex: none; }
+.swatch.s1 { background: var(--s1); } .swatch.s2 { background: var(--s2); }
+.swatch.sq { border-radius: 2px; width: 14px; }
+.swatch.neg { background: var(--div-neg); } .swatch.pos { background: var(--div-pos); }
+details { font-size: 14px; }
+details summary { cursor: pointer; color: var(--ink-2); width: fit-content; }
+details[open] summary { margin-bottom: 8px; }
+.tablewrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { padding: 7px 10px; text-align: left; border-bottom: 1px solid var(--grid); vertical-align: top; }
+th { font-size: 12px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+.car b { font-weight: 600; } .car span { color: var(--ink-2); }
+table.heat td.h { background: color-mix(in oklab, var(--div-mid), var(--div-pos) calc(var(--k) * 100%)); }
+table.heat td.h.neg { background: color-mix(in oklab, var(--div-mid), var(--div-neg) calc(var(--k) * 100%)); }
+table.heat td.h { border-bottom: 2px solid var(--surface); border-left: 2px solid var(--surface); }
+table.heat td.ref { color: var(--muted); }
+table.heat .se { color: var(--ink-2); font-size: 12.5px; margin-left: 4px; }
+table.heat th small { display: block; text-transform: none; letter-spacing: 0; font-size: 11.5px; }
+.scale { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink-2); flex-wrap: wrap; }
+.scale .ramp { width: 160px; height: 10px; border-radius: 2px;
+  background: linear-gradient(90deg, color-mix(in oklab, var(--div-mid), var(--div-neg) 72%), var(--div-mid),
+  color-mix(in oklab, var(--div-mid), var(--div-pos) 72%)); }
+/* dot plot and diverging bars, drawn in HTML so text stays legible at every width */
+.dp { position: relative; display: grid; grid-template-columns: var(--lw, 8.5rem) minmax(0, 1fr); }
+.dp-label { font-size: 14px; padding-right: 10px; display: flex; align-items: center; min-height: 32px;
+  border-bottom: 1px solid transparent; }
+.dp-label small { color: var(--ink-2); margin-left: 6px; }
+.dp-plot { position: relative; min-height: 32px; }
+.dp-grid { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--grid); }
+.dp-grid.zero { background: var(--axis); }
+.dp-axis { position: relative; height: 22px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.dp-axis span { position: absolute; top: 4px; transform: translateX(-50%); white-space: nowrap; }
+.whisker { position: absolute; height: 2px; border-radius: 1px; }
+.dot { position: absolute; width: 10px; height: 10px; border-radius: 50%; transform: translate(-50%, -50%);
+  box-shadow: 0 0 0 2px var(--surface); }
+.dot::after { content: ""; position: absolute; inset: -8px; border-radius: 50%; }
+.dot:hover, .dot:focus-visible { transform: translate(-50%, -50%) scale(1.25); }
+.s1 > .dot, .whisker.s1, .dot.s1 { background: var(--s1); }
+.whisker.s2, .dot.s2 { background: var(--s2); }
+.bar { position: absolute; top: 50%; height: 14px; transform: translateY(-50%); }
+.bar.pos { background: var(--div-pos); border-radius: 0 4px 4px 0; }
+.bar.neg { background: var(--div-neg); border-radius: 4px 0 0 4px; }
+.bar-val { position: absolute; top: 50%; transform: translateY(-50%); font-size: 12.5px; color: var(--ink-2);
+  font-variant-numeric: tabular-nums; white-space: nowrap; padding: 0 6px; }
+/* track map */
+.map svg { width: 100%; height: auto; display: block; }
+.map text { font-size: calc(var(--fs) * 1px); }
+.map .track { fill: none; stroke: var(--track); stroke-width: 14; stroke-linejoin: round; }
+.map .sector-line { stroke: var(--ink); stroke-width: 5; }
+.map .sector-label { fill: var(--ink); font-weight: 600; }
+.map .arrow { fill: var(--ink); }
+.map .corner { fill: var(--surface); stroke: var(--ink-2); stroke-width: 4; }
+.map .corner.slow { fill: var(--s1); stroke: var(--surface); }
+.map .corner.fast { fill: var(--s2); stroke: var(--surface); }
+.map .corner.flat { fill: var(--surface); stroke: var(--muted); }
+.map .corner-label { fill: var(--ink-2); font-variant-numeric: tabular-nums; }
+.map .hit { fill: transparent; }
+/* checks */
+.status { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; white-space: nowrap; }
+.status i { width: 18px; height: 18px; border-radius: 50%; display: inline-grid; place-items: center;
+  font-style: normal; font-size: 11px; font-weight: 700; color: #ffffff; }
+.status.pass i { background: var(--good); } .status.warn i { background: var(--warn); color: #0b0b0b; }
+.status.fail i { background: var(--bad); } .status.info i { background: var(--info); }
+.checks td:first-child { width: 1%; }
+.checks td.what { color: var(--ink-2); }
+.checks .name { font-weight: 600; display: block; color: var(--ink); }
+.callout { border-left: 3px solid var(--axis); padding: 10px 14px; background: var(--surface);
+  border-radius: 0 6px 6px 0; }
+.callout p { font-size: 14px; color: var(--ink-2); }
+.callout b { color: var(--ink); }
+footer { border-top: 1px solid var(--border); background: var(--surface); }
+footer .in { max-width: 1080px; margin: 0 auto; padding: 20px 16px 32px; font-size: 13px; color: var(--ink-2);
+  display: flex; flex-direction: column; gap: 8px; }
+footer p { max-width: 100ch; }
+.tip { position: fixed; z-index: 10; pointer-events: none; background: var(--surface); color: var(--ink);
+  border: 1px solid var(--border); border-radius: 6px; padding: 6px 9px; font-size: 13px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12); max-width: 280px; }
+.tip b { display: block; font-variant-numeric: tabular-nums; }
+.tip span { color: var(--ink-2); }
+.sessions { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.sessions a { display: block; text-decoration: none; color: var(--ink); background: var(--surface);
+  border: 1px solid var(--border); border-radius: 6px; padding: 16px; }
+.sessions a:hover { border-color: var(--axis); }
+.sessions .t { font-weight: 600; font-size: 17px; display: block; }
+.sessions .m { color: var(--ink-2); font-size: 14px; }
+@media (max-width: 600px) {
+  .opt { display: none; }
+  table.heat td, table.heat th { padding: 7px 6px; }
+  table.heat .se { display: block; margin: 0; }
+  .car span { display: block; font-size: 12.5px; }
+  .dp { --lw: 6.8rem; }
+  .dp-axis span.minor { display: none; }
+  .map text { font-size: calc(var(--fs) * 1.35px); }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style></head>
+<body>
+<header class="top"><div class="in"><a class="brand" href="./">parc-ferme</a></div></header>
+<main>
+<section class="hero"><div class="eyebrow">2026 season</div><h1>Engineering debriefs</h1>
+<p class="meta">After each session: where every car gained and lost time, and why, worked out from public timing
+data by physics models that are checked against what the cars actually did.</p></section>
+<section><ol class="sessions"><li><a href="2026/07-barcelona-grand-prix-race/"><span class="t">Barcelona Grand Prix · Race</span><span class="m">Round 7 · 14 June 2026 · Circuit de Barcelona-Catalunya</span></a></li></ol></section>
+</main>
+<footer><div class="in"><p>Data: <a href="https://openf1.org">OpenF1</a> (timing, car data, positions, weather), the F1 circuit-info service (corner positions), the <a href="https://github.com/TUMFTM/racetrack-database">TUMFTM racetrack database</a> (track widths, LGPL-3.0) and <a href="https://github.com/jolpica/jolpica-f1">Jolpica</a> (official classification). Code, models and test benches: <a href="https://github.com/raahimnawaz/parc-ferme">parc-ferme on
+GitHub</a>, MIT licence.</p><p>parc-ferme is an independent project and is not associated in any way with the Formula 1 companies. F1, FORMULA ONE, FORMULA 1, FIA FORMULA ONE WORLD CHAMPIONSHIP, GRAND PRIX and related marks are trade marks of Formula One Licensing B.V.</p></div></footer>
+</body></html>
