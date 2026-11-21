@@ -29,6 +29,7 @@ build-backend = "setuptools.build_meta"
 where = ["src"]
 
 [tool.ruff]
+extend-exclude = ["prototypes"]
 line-length = 120
 src = ["src", "tests"]
 
