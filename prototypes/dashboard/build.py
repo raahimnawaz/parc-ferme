@@ -165,7 +165,7 @@ JS = (HERE / "dash.js").read_text()
 html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Barcelona Grand Prix · telemetry · parc-ferme</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=EB+Garamond:ital,wght@0,400..700;1,400..700&family=Newsreader:ital,opsz,wght@0,6..72,400..600;1,6..72,400..600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400..600;1,8..60,400..600&family=Spectral:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Saira:wdth,wght@100..125,300..500&family=Martian+Mono:wdth,wght@75..112.5,300..400&display=swap">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uplot@1.6.32/dist/uPlot.min.css">
 <script src="https://cdn.jsdelivr.net/npm/uplot@1.6.32/dist/uPlot.iife.min.js"></script>
 <style>{CSS}</style></head><body>
@@ -187,7 +187,6 @@ html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name
     <label class="sel b"><i class="sw" id="swB"></i><span>Car B</span><select id="selB">{options}</select></label>
     <div class="seg" role="group" aria-label="Lap"><button data-lap="fastest" class="on">Fastest lap</button><button data-lap="typical">Typical lap</button></div>
     <label class="tog"><input type="checkbox" id="simOn"><span>Lap sim</span></label>
-    <label class="sel"><span>Type</span><select id="selType"><option value="garamond">EB Garamond</option><option value="newsreader">Newsreader</option><option value="spectral">Spectral</option><option value="source">Source Serif 4</option></select></label>
     <div class="zoom" id="zoom"></div>
   </div>
   <div class="lap-grid">

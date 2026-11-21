@@ -8,11 +8,10 @@
   const SEC = ['#ef3b36', '#2fa4ff', '#ffd12e'];
   const NEUTRAL = '#4a4a50';
   const AX = 40; // width of every chart's right-hand value axis, so all plots share one x-to-pixel mapping
-  const DATA_FONT = '"DM Mono", ui-monospace, Menlo, monospace';
+  const DATA_FONT = '"Martian Mono", ui-monospace, Menlo, monospace';
   const uiFont = () => getComputedStyle(document.body).fontFamily;
-  const FONTS = ['garamond', 'newsreader', 'spectral', 'source'];
   const order = [...$('#selA').options].map(o => o.value);
-  const state = { ws: 'lap', a: order[0], b: order[1], lap: 'fastest', sim: false, type: 'garamond', x0: 0, x1: L, cur: null, ref: null, map: 'gain' };
+  const state = { ws: 'lap', a: order[0], b: order[1], lap: 'fastest', sim: false, x0: 0, x1: L, cur: null, ref: null, map: 'gain' };
 
   // ---------- state in the URL ----------
   function readHash() {
@@ -22,10 +21,9 @@
     if (D.cars[p.get('b')]) state.b = p.get('b');
     if (['fastest', 'typical'].includes(p.get('lap'))) state.lap = p.get('lap');
     state.sim = p.get('sim') === '1';
-    if (FONTS.includes(p.get('type'))) state.type = p.get('type');
   }
   function writeHash() {
-    const p = new URLSearchParams({ ws: state.ws, a: state.a, b: state.b, lap: state.lap, sim: state.sim ? '1' : '0', type: state.type });
+    const p = new URLSearchParams({ ws: state.ws, a: state.a, b: state.b, lap: state.lap, sim: state.sim ? '1' : '0' });
     history.replaceState(null, '', '#' + p.toString());
   }
 
@@ -114,14 +112,14 @@
 
   // ---------- charts (uPlot) ----------
   const axisY = (extra = {}) => ({
-    side: 1, size: AX, gap: 6, stroke: '#6b6b6b', font: `10.5px ${DATA_FONT}`, ticks: { show: false },
+    side: 1, size: AX, gap: 6, stroke: '#6e6e6e', font: `300 10px ${DATA_FONT}`, ticks: { show: false },
     grid: { stroke: 'rgba(255,255,255,0.06)', width: 1 }, ...extra,
   });
   const axisX = show => show
-    ? { stroke: '#6b6b6b', font: `10.5px ${DATA_FONT}`, size: 24, gap: 4, ticks: { show: false }, grid: { show: false },
+    ? { stroke: '#6e6e6e', font: `300 10px ${DATA_FONT}`, size: 24, gap: 4, ticks: { show: false }, grid: { show: false },
         values: (u, vals) => vals.map(v => v >= 1000 ? (v / 1000).toFixed(v % 1000 ? 1 : 0) + ' km' : v + ' m') }
     : { show: false };
-  const line = (stroke, extra = {}) => ({ stroke, width: 1.25, points: { show: false }, ...extra });
+  const line = (stroke, extra = {}) => ({ stroke, width: 1, points: { show: false }, ...extra });
 
   function series(p, ca, cb) {
     const A = cache.A, B = cache.B, S = cache.S;
@@ -174,8 +172,8 @@
     }
     const note = p.delta ? [`${D.cars[state.a].last} ahead`, `${D.cars[state.b].last} ahead`] : p.id === 'ers' ? ['deploy', 'harvest'] : null;
     if (note) {
-      ctx.fillStyle = '#6b6b6b'; ctx.font = `italic ${13.5 * dpr}px ${uiFont()}`;
-      ctx.fillText(note[0] + ' ↑', left + 7 * dpr, top + 15 * dpr);
+      ctx.fillStyle = '#6e6e6e'; ctx.font = `300 ${11.5 * dpr}px ${uiFont()}`;
+      ctx.fillText(note[0] + ' ↑', left + 7 * dpr, top + 14 * dpr);
       ctx.fillText(note[1] + ' ↓', left + 7 * dpr, top + height - 7 * dpr);
     }
     ctx.restore();
@@ -347,12 +345,12 @@
       : `<tr><td>Sector ${k + 1}</td><td class="${cls(A, la.s[k], k)}">${la.s[k].toFixed(3)}</td><td class="${cls(B, lb.s[k], k)}">${lb.s[k].toFixed(3)}</td>${delta(la.s[k], lb.s[k], 3)}</tr>`;
     const topA = Math.max(...cache.A.v), topB = Math.max(...cache.B.v);
     const ftA = share(cache.A.thr, v => v >= 98), ftB = share(cache.B.thr, v => v >= 98);
-    $('#summary').innerHTML = `<thead><tr><th></th><th><i class="sw" style="background:${cache.ca};margin-right:6px;vertical-align:middle"></i>${esc(A.last)}</th><th><i class="sw" style="background:${cache.cb};margin-right:6px;vertical-align:middle"></i>${esc(B.last)}</th><th>Δ</th></tr></thead><tbody>
+    $('#summary').innerHTML = `<thead><tr><th></th><th><i class="sw" style="background:${cache.ca};margin-right:6px;vertical-align:middle"></i>${esc(state.a)}</th><th><i class="sw" style="background:${cache.cb};margin-right:6px;vertical-align:middle"></i>${esc(state.b)}</th><th>Δ</th></tr></thead><tbody>
       <tr><td>Lap</td><td class="${cls(A, la.time)}">${fmtLap(la.time)}</td><td class="${cls(B, lb.time)}">${fmtLap(lb.time)}</td>${delta(la.time, lb.time, 3)}</tr>
       ${sec(0)}${sec(1)}${sec(2)}
-      ${la.st && lb.st ? `<tr><td>Speed trap, km/h</td><td>${la.st.toFixed(0)}</td><td>${lb.st.toFixed(0)}</td>${delta(la.st, lb.st, 0)}</tr>` : ''}
-      <tr><td>Top speed, km/h</td><td>${topA}</td><td>${topB}</td>${delta(topA, topB, 0)}</tr>
-      <tr><td>Full throttle, % of lap</td><td>${ftA.toFixed(0)}</td><td>${ftB.toFixed(0)}</td>${delta(ftA, ftB, 0)}</tr></tbody>`;
+      ${la.st && lb.st ? `<tr><td>Speed trap<small>km/h</small></td><td>${la.st.toFixed(0)}</td><td>${lb.st.toFixed(0)}</td>${delta(la.st, lb.st, 0)}</tr>` : ''}
+      <tr><td>Top speed<small>km/h</small></td><td>${topA}</td><td>${topB}</td>${delta(topA, topB, 0)}</tr>
+      <tr><td>Full throttle<small>% of lap</small></td><td>${ftA.toFixed(0)}</td><td>${ftB.toFixed(0)}</td>${delta(ftA, ftB, 0)}</tr></tbody>`;
     $('#lapNote').textContent = typical ? `median of ${la.laps} and ${lb.laps} green laps` : `lap ${la.lap} and lap ${lb.lap}`;
     $('#sumLegend').hidden = typical;
     const note = $('#sumNote'), adjA = D.adjusted[state.a], adjB = D.adjusted[state.b];
@@ -378,14 +376,14 @@
     const ta = tAt('A', b) - tAt('A', a), tb = tAt('B', b) - tAt('B', a), d = tb - ta;
     const idx = []; for (let i = Math.ceil(a / DX); i <= Math.floor(b / DX); i++) idx.push(i);
     const minv = arr => Math.min(...idx.map(i => arr[i])), ft = arr => idx.filter(i => arr[i] >= 98).length / idx.length * 100;
-    const who = Math.abs(d) < 0.0005 ? 'Level' : `${esc((d > 0 ? A : B).last)} faster by ${Math.abs(d).toFixed(3)} s`;
+    const who = Math.abs(d) < 0.0005 ? 'Level' : `${esc((d > 0 ? A : B).last)} faster by <b>${Math.abs(d).toFixed(3)} s</b>`;
     el.className = '';
     el.innerHTML = `<div class="dim">${Math.round(a).toLocaleString('en-GB')}–${Math.round(b).toLocaleString('en-GB')} m · ${Math.round(b - a)} m</div><div class="big">${who}</div>
-      <table><tr><td></td><td>${esc(A.last)}</td><td>${esc(B.last)}</td></tr>
-      <tr><td>Time, s</td><td>${ta.toFixed(3)}</td><td>${tb.toFixed(3)}</td></tr>
-      <tr><td>Average speed, km/h</td><td>${((b - a) / ta * 3.6).toFixed(1)}</td><td>${((b - a) / tb * 3.6).toFixed(1)}</td></tr>
-      <tr><td>Lowest speed, km/h</td><td>${minv(cache.A.v)}</td><td>${minv(cache.B.v)}</td></tr>
-      <tr><td>Full throttle, %</td><td>${ft(cache.A.thr).toFixed(0)}</td><td>${ft(cache.B.thr).toFixed(0)}</td></tr></table>`;
+      <table><tr><td></td><th>${esc(state.a)}</th><th>${esc(state.b)}</th></tr>
+      <tr><td>Time<small>s</small></td><td>${ta.toFixed(3)}</td><td>${tb.toFixed(3)}</td></tr>
+      <tr><td>Average speed<small>km/h</small></td><td>${((b - a) / ta * 3.6).toFixed(1)}</td><td>${((b - a) / tb * 3.6).toFixed(1)}</td></tr>
+      <tr><td>Lowest speed<small>km/h</small></td><td>${minv(cache.A.v)}</td><td>${minv(cache.B.v)}</td></tr>
+      <tr><td>Full throttle<small>%</small></td><td>${ft(cache.A.thr).toFixed(0)}</td><td>${ft(cache.B.thr).toFixed(0)}</td></tr></table>`;
   }
   $('#clearRef').addEventListener('click', () => { state.ref = null; lastCur = null; Object.values(charts).forEach(c => c.redraw(false)); drawMap(); onCursor(); drawWindow(); });
 
@@ -419,11 +417,6 @@
   $('#selB').addEventListener('change', e => { state.b = e.target.value; render(); });
   $$('[data-lap]').forEach(b => b.addEventListener('click', () => { state.lap = b.dataset.lap; $$('[data-lap]').forEach(x => x.classList.toggle('on', x === b)); render(); }));
   $('#simOn').addEventListener('change', e => { state.sim = e.target.checked; render(); });
-  function applyType() { document.documentElement.dataset.font = state.type; $('#selType').value = state.type; }
-  $('#selType').addEventListener('change', e => {
-    state.type = e.target.value; applyType(); writeHash();
-    document.fonts.ready.then(() => { if (!$('#ws-lap').hidden) render(); });
-  });
   $$('[data-map]').forEach(b => b.addEventListener('click', () => { state.map = b.dataset.map; $$('[data-map]').forEach(x => x.classList.toggle('on', x === b)); drawMap(); onCursor(); }));
   function showWs(ws) {
     state.ws = ws;
@@ -474,7 +467,6 @@
   });
 
   readHash();
-  applyType();
   $('#selA').value = state.a; $('#selB').value = state.b; $('#simOn').checked = state.sim;
   $$('[data-lap]').forEach(x => x.classList.toggle('on', x.dataset.lap === state.lap));
   showWs(state.ws);
