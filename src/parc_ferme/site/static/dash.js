@@ -103,10 +103,16 @@
         if (q > p) s += `<line x1="${p}" x2="${q}" y1="24.5" y2="24.5" stroke="#2ecc71" stroke-width="1" stroke-dasharray="3 2"><title>Straight-mode zone</title></line>`;
       });
     });
+    // every corner keeps its tick; a number that would touch the one before it is left out (zoom in to see it)
+    let lastRight = -Infinity;
+    textCtx.font = `300 10px ${DATA_FONT}`;
     D.corners.forEach(c => {
       const x = sx(c.x);
       if (x < -4 || x > w + 4) return;
       s += `<line x1="${x}" x2="${x}" y1="12" y2="19" stroke="#55555c"/>`;
+      const half = textCtx.measureText(String(c.n)).width / 2;
+      if (x - half < lastRight + 3) return;
+      lastRight = x + half;
       s += `<text class="corner-lab" data-zoom="${c.x}" x="${x}" y="9" text-anchor="middle">${c.n}</text>`;
     });
     stripe.pl.innerHTML = s + '</svg>';

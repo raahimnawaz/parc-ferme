@@ -1,5 +1,7 @@
 # parc-ferme
 
+**Live: [raahimnawaz.github.io/parc-ferme](https://raahimnawaz.github.io/parc-ferme/)**
+
 Post-session engineering debriefs for 2026 Formula 1, worked out from public timing data by physics models that
 are checked against what the cars actually did.
 
@@ -108,9 +110,9 @@ with those taken out by 0.16 s.
 
 The page is static HTML and CSS with one script; traces are drawn with [uPlot](https://github.com/leeoniya/uPlot)
 (MIT), loaded from a pinned CDN build with an integrity hash. `parc-ferme publish` pushes the site to the `gh-pages`
-branch for GitHub Pages; it refuses if the code or any page isn't built from a commit. GitHub Pages isn't switched
-on yet. Rebuilding after each session isn't automated yet, and only Barcelona is set up (other circuits need their
-straight-mode zones and a source of track widths).
+branch, which GitHub Pages serves; it refuses if the code or any page isn't built from a commit. Rebuilding after
+each session isn't automated yet, and only Barcelona is set up (other circuits need their straight-mode zones and a
+source of track widths).
 
 Race pace is compared car by car, sector by sector, against the fastest car. Each green lap's three sector times
 are fitted with an effect per car and shared terms for tyre compound, tyre age (a slope per compound), lap number
