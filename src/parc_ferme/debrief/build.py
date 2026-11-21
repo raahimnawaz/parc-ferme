@@ -4,7 +4,9 @@ The page is rendered from this document alone, so a published page can always be
 and code version behind it.
 """
 
+import json
 import subprocess
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -19,12 +21,12 @@ from ..bench import pace as pace_bench
 from ..core.track import FEED_UNITS_PER_M, Track
 from ..models import grip, pace
 from ..session import Session
-from . import summary
+from . import channels, summary
 
 CIRCUIT_NAMES = {15: "Circuit de Barcelona-Catalunya"}
 MAP_STEP_M = 10.0
 LABEL_OFFSET_M = 55.0
-SCHEMA = 1
+SCHEMA = 2
 
 
 def code_version() -> dict:
@@ -99,6 +101,29 @@ def track_map(s: Session, ref: Track, bounds: list[float], corner_kph: pd.Series
     return {"x": np.round(x, 1).tolist(), "y": np.round(-y, 1).tolist(), "corners": corners, "lines": marks}
 
 
+def _plain(o):
+    if isinstance(o, dict):
+        return {str(k): _plain(v) for k, v in o.items()}
+    if isinstance(o, list | tuple | np.ndarray):
+        return [_plain(v) for v in o]
+    if isinstance(o, bool | np.bool_):
+        return bool(o)
+    if isinstance(o, int | np.integer):
+        return int(o)
+    if isinstance(o, float | np.floating):
+        return float(o) if np.isfinite(o) else None
+    return o
+
+
+def to_json(d: dict) -> str:
+    """The document as compact JSON, with NaN as null so a browser can parse it."""
+    return json.dumps(_plain(d), separators=(",", ":"), allow_nan=False)
+
+
+def _team_colour(hex_rgb) -> str:
+    return f"#{hex_rgb}" if isinstance(hex_rgb, str) and len(hex_rgb) == 6 else "#8a8a8a"
+
+
 def _records(df: pd.DataFrame) -> list[dict]:
     return [{k: (v.item() if isinstance(v, np.generic) else v) for k, v in r.items()}
             for r in df.to_dict(orient="records")]
@@ -122,7 +147,7 @@ def build(s: Session) -> dict:
         grid, rnd = {}, None
     drivers = s.drivers.set_index("driver_number")
     cars = {r.name_acronym: {"name": f"{r.first_name} {r.last_name}", "last": r.last_name, "team": r.team_name,
-                             "number": int(n)} for n, r in drivers.iterrows()}
+                             "number": int(n), "colour": _team_colour(r.team_colour)} for n, r in drivers.iterrows()}
     podium = [{"position": int(r.position), "driver": drivers.name_acronym[r.driver_number],
                "team": drivers.team_name[r.driver_number], "grid": grid.get(r.driver_number)}
               for r in results.head(3).itertuples()]
@@ -137,6 +162,8 @@ def build(s: Session) -> dict:
     corners = g.field.corners.assign(w=g.field.corners.corner.map(g.w))
     rel = g.relative
     clean = g.clean_air.set_index("team") if g.clean_air is not None else None
+    sim_car = replace(g.field.car, fuel_kg=channels.SIM_FUEL_KG)
+    lap_length = float(g.model.stats["speed_integrated_lap_m"])
     d = {
         "schema": SCHEMA,
         "session": {"key": s.key, "year": s.meta["year"], "round": rnd,
@@ -162,6 +189,8 @@ def build(s: Session) -> dict:
                                 "fast": float(clean.fast_corner_pct[r["team"]])} for r in _records(rel)]},
                  "sections": _records(g.sections)},
         "track": track_map(s, g.model.reference, bounds, g.corner_kph, g.w, g.flat_out),
+        "telemetry": channels.telemetry(s.car_data, t, g.model, sectors, _records(rel), sim_car, lap_length),
+        "car_model": channels.parameter_effects(g.model.line, g.model.zones, sim_car),
         "bench": {"rows": _records(bench), "tolerance_pct": grip_bench.TOLERANCE_PCT,
                   "passed": bool((bench.mech_err.abs() <= grip_bench.TOLERANCE_PCT["mech"]).all()
                                  and (bench.downforce_err.abs() <= grip_bench.TOLERANCE_PCT["downforce"]).all())},

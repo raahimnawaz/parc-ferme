@@ -88,13 +88,29 @@ Found here:
 - **Lateral position.** The feed places every car on one reference line (Hamilton's positions sit within 6 cm of
   it), so it says where a car is around the lap, not across the track.
 
-Step 4: the first debrief page, `parc-ferme debrief`. A static page per session with a summary of three findings,
-race pace and grip, and the checks behind them, built into `_site/` from one JSON document (`debrief.json`) that
-records every number, check and the code version. Plain HTML and CSS, light and dark, readable at phone width, with
-a table view behind every chart. `parc-ferme publish` pushes the site to the `gh-pages` branch for GitHub Pages; it
-refuses if the code or any page isn't built from a commit. The site isn't switched on yet: the page is being
-redesigned so it reads at a glance and opens up into the detail. Rebuilding after each session isn't automated
-yet, and only Barcelona is set up (other circuits need their straight-mode zones and a source of track widths).
+Step 4: the debrief site, `parc-ferme debrief`. Each session gets a telemetry workstation in the manner of the
+tools teams use (ATLAS, MoTeC): channels against distance, with the detail a click away. It is built into `_site/`
+from one JSON document (`debrief.json`, published beside the page) that records every number, check and channel and
+the code version.
+
+| Workspace | |
+|---|---|
+| Lap analysis | Any two cars' fastest or typical laps against distance: speed, time gap, throttle, brake, gear and engine speed, under a strip of sectors, corners and straight-mode zones. A track map coloured by who was faster in each of 25 mini-sectors, the lap summary in timing-screen colours, and a reference cursor that measures any stretch. The lap sim's car for car A's team can be overlaid, with its energy channels. |
+| Race pace | Time lost per lap to the fastest car, sector by sector, and the cost of running in traffic. |
+| Car model | The sim car's parameters, where each comes from (rules, measured, fitted or nominal) and the lap-time effect of +1% on each; cornering grip by team. |
+| Model health | The data checks, both test benches and the known gaps, as status tiles. |
+
+Distance is corrected distance, as MoTeC and ATLAS build it: speed integrated over the lap and scaled to the lap
+length, so every car's laps line up corner for corner (the speed channel is right to 0.1%, while the position feed's
+timestamps jitter). A typical lap is the median of a car's green laps point by point, scaled to its median lap time,
+and is labelled as not adjusted for tyres, fuel or traffic: on raw medians Hamilton led Russell by 0.97 s a lap,
+with those taken out by 0.16 s.
+
+The page is static HTML and CSS with one script; traces are drawn with [uPlot](https://github.com/leeoniya/uPlot)
+(MIT), loaded from a pinned CDN build with an integrity hash. `parc-ferme publish` pushes the site to the `gh-pages`
+branch for GitHub Pages; it refuses if the code or any page isn't built from a commit. GitHub Pages isn't switched
+on yet. Rebuilding after each session isn't automated yet, and only Barcelona is set up (other circuits need their
+straight-mode zones and a source of track widths).
 
 Race pace is compared car by car, sector by sector, against the fastest car. Each green lap's three sector times
 are fitted with an effect per car and shared terms for tyre compound, tyre age (a slope per compound), lap number
@@ -118,13 +134,14 @@ uv venv --python 3.12 && uv pip install -e ".[dev]"
 .venv/bin/parc-ferme check 11307      # data checks + warm-up analyses, written to reports/11307/
 .venv/bin/parc-ferme sim 11307        # nominal 2026 car on the minimum-time line vs Hamilton's best lap
 .venv/bin/parc-ferme grip 11307       # S3: grip per team, the fitted field car, driven distance per section
-.venv/bin/parc-ferme debrief 11307    # the debrief page, built into _site/ (refused if a gating check fails)
+.venv/bin/parc-ferme debrief 11307    # the session's workstation, built into _site/ (refused if a gating check fails)
 .venv/bin/parc-ferme site             # rebuild _site/ from every debrief already built
 .venv/bin/parc-ferme publish          # rebuild _site/ and push it to gh-pages (GitHub Pages)
 .venv/bin/python -m pytest
 ```
 
 `check` exits non-zero if any gating check fails, and `debrief` won't build a page for a session that fails one.
+Preview the site with `python -m http.server -d _site`.
 
 ## Data
 
@@ -182,10 +199,12 @@ src/parc_ferme/
     grip.py     S3 test bench: synthetic teams with known grip and downforce
     pace.py     pace test bench: a synthetic race with known gaps and effects
   debrief/
-    build.py    everything one debrief page shows, as one JSON document
-    summary.py  the three findings, worded only as strongly as the uncertainty allows
+    build.py    everything one session's page shows, as one JSON document
+    channels.py every car's laps on one distance axis, the lap sim per team, the sim car's lap-time sensitivities
+    summary.py  the findings in words, only as strong as the uncertainty allows (in the document, not yet on the page)
   site/
-    render.py   the static site: one page per session and an index
+    render.py   the static site: a telemetry workstation per session and an index
+    static/     the workstation's stylesheet and script (traces drawn with uPlot)
     publish.py  the built site onto the gh-pages branch, without touching the working tree
 ```
 

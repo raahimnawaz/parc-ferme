@@ -25,6 +25,7 @@ class Check:
     passed: bool
     detail: str
     gating: bool = True
+    value: float | None = None  # the check's headline number, where it has one
 
     def __post_init__(self):
         self.passed = bool(self.passed)
@@ -98,7 +99,7 @@ def car_data_rate(s: Session) -> Check:
     ok = SAMPLE_DT_RANGE[0] <= med <= SAMPLE_DT_RANGE[1] and worst[1] < 0.01
     return Check("car_data_rate", ok,
                  f"median sample interval {med:.3f} s ({1 / med:.1f} Hz); worst gaps >{MAX_GAP_S:.0f} s: "
-                 f"{worst[0] or 'none'} {100 * worst[1]:.2f}% of samples")
+                 f"{worst[0] or 'none'} {100 * worst[1]:.2f}% of samples", value=1 / med)
 
 
 def lap_distances(s: Session, t: pd.DataFrame) -> pd.Series:
@@ -120,7 +121,8 @@ def lap_distance(s: Session, t: pd.DataFrame) -> Check:
     return Check("lap_distance", ok,
                  f"speed integrated over each fastest lap: median {dist.median():.0f} m, "
                  f"range {dist.min():.0f}–{dist.max():.0f} m, vs centreline {ref:.0f} m; "
-                 f"{int((rel <= DISTANCE_TOL).sum())}/{len(rel)} within {100 * DISTANCE_TOL:.0f}%")
+                 f"{int((rel <= DISTANCE_TOL).sum())}/{len(rel)} within {100 * DISTANCE_TOL:.0f}%",
+                 value=float(dist.median()))
 
 
 def speed_scale(s: Session) -> Check:
@@ -151,7 +153,7 @@ def speed_scale(s: Session) -> Check:
     scale = float(np.median(r))
     return Check("speed_scale", abs(scale - 1) <= SPEED_SCALE_TOL,
                  f"speed from positions / speed channel on straights: median {scale:.4f} over {len(r)} sample pairs "
-                 f"(tolerance {100 * SPEED_SCALE_TOL:.0f}%)")
+                 f"(tolerance {100 * SPEED_SCALE_TOL:.0f}%)", value=scale)
 
 
 def layout(s: Session, t: pd.DataFrame) -> Check:

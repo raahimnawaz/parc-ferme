@@ -29,7 +29,6 @@ build-backend = "setuptools.build_meta"
 where = ["src"]
 
 [tool.ruff]
-extend-exclude = ["prototypes"]
 line-length = 120
 src = ["src", "tests"]
 
@@ -40,4 +39,4 @@ select = ["E", "F", "I", "B", "UP"]
 pythonpath = ["src"]
 
 [tool.setuptools.package-data]
-parc_ferme = ["**/*.toml"]
+parc_ferme = ["**/*.toml", "site/static/*"]

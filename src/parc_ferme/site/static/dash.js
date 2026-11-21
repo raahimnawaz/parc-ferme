@@ -10,13 +10,16 @@
   const AX = 40; // width of every chart's right-hand value axis, so all plots share one x-to-pixel mapping
   const DATA_FONT = '"Martian Mono", ui-monospace, Menlo, monospace';
   const uiFont = () => getComputedStyle(document.body).fontFamily;
+  const textCtx = document.createElement('canvas').getContext('2d');
+  // width of a stripe label as CSS draws it (.stripe-lab: 11px light, spaced capitals)
+  const labelWidth = text => { textCtx.font = `300 11px ${uiFont()}`; return textCtx.measureText(text.toUpperCase()).width + 1.1 * text.length; };
   const order = [...$('#selA').options].map(o => o.value);
   const state = { ws: 'lap', a: order[0], b: order[1], lap: 'fastest', sim: false, x0: 0, x1: L, cur: null, ref: null, map: 'gain' };
 
   // ---------- state in the URL ----------
   function readHash() {
     const p = new URLSearchParams(location.hash.slice(1));
-    if (p.get('ws')) state.ws = p.get('ws');
+    if (document.getElementById('ws-' + p.get('ws'))) state.ws = p.get('ws');
     if (D.cars[p.get('a')]) state.a = p.get('a');
     if (D.cars[p.get('b')]) state.b = p.get('b');
     if (['fastest', 'typical'].includes(p.get('lap'))) state.lap = p.get('lap');
@@ -91,8 +94,8 @@
       s += `<rect class="stripe-sec" data-k="${k}" x="${a}" y="14" width="${b - a}" height="24" fill="transparent"/>`;
       s += `<rect x="${a}" y="19" width="${b - a}" height="2" fill="${SEC[k]}" pointer-events="none"/>`;
       const label = `Sector ${sec.k} · Turns ${sec.corners[0]}–${sec.corners[sec.corners.length - 1]}`;
-      if (b - a > label.length * 6.6 + 16) s += `<text class="stripe-lab" x="${a + 6}" y="35" style="fill:${SEC[k]}">${label}</text>`;
-      else if (b - a > 26) s += `<text class="stripe-lab" x="${a + 6}" y="35" style="fill:${SEC[k]}">S${sec.k}</text>`;
+      if (b - a > labelWidth(label) + 14) s += `<text class="stripe-lab" x="${a + 6}" y="35" style="fill:${SEC[k]}">${label}</text>`;
+      else if (b - a > labelWidth(`S${sec.k}`) + 14) s += `<text class="stripe-lab" x="${a + 6}" y="35" style="fill:${SEC[k]}">S${sec.k}</text>`;
     });
     D.zones.forEach(([z0, z1]) => {
       (z1 > z0 ? [[z0, z1]] : [[z0, L], [0, z1]]).forEach(([a, b]) => {

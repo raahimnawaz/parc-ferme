@@ -109,7 +109,7 @@ def grip(args) -> int:
 
 
 def debrief(args) -> int:
-    from .debrief.build import build
+    from .debrief.build import build, to_json
 
     s = Session(args.session_key)
     d = build(s)
@@ -121,16 +121,26 @@ def debrief(args) -> int:
         return 1
     out = REPORTS / str(s.key)
     out.mkdir(parents=True, exist_ok=True)
-    (out / "debrief.json").write_text(json.dumps(d, indent=1, default=float))
+    (out / "debrief.json").write_text(to_json(d))
+    t = d["telemetry"]
+    print(f"telemetry: {len(t['laps'])} cars, {t['green_laps']} green laps on a {t['dx']:g} m grid over "
+          f"{t['L']:.0f} m; lap sim for {len(t['sims'])} teams")
     for f in d["summary"]:
         print("-", f["text"])
     return site(args)
 
 
 def site(args) -> int:
+    from .debrief.build import SCHEMA
     from .site import render
 
-    debriefs = [json.loads(p.read_text()) for p in sorted(REPORTS.glob("*/debrief.json"))]
+    debriefs = []
+    for p in sorted(REPORTS.glob("*/debrief.json")):
+        d = json.loads(p.read_text())
+        if d.get("schema") == SCHEMA:
+            debriefs.append(d)
+        else:
+            print(f"skipped {p.parent.name}: built by an older version, rebuild it with `parc-ferme debrief`")
     pages = render.write(SITE, debriefs)
     for p in pages:
         print(f"page: {p}")

@@ -1,221 +1,31 @@
-"""Static site: one page per session debrief, plus an index. Plain HTML and CSS with one small script for
-tooltips; no build step and nothing loaded from elsewhere, so a page works from any static host or from disk.
+"""The static site: a telemetry workstation for each session, and an index of sessions.
 
-Charts follow one rulebook: thin marks, hairline grid, a legend for two or more series, colours from a validated
-palette chosen separately for light and dark, and a table view behind every chart.
+Each page is rendered from its session's debrief document alone. The race pace, car model and model health
+workspaces are rendered here; the lap traces, track map and read-outs are drawn in the browser by static/dash.js,
+with uPlot, from the telemetry embedded in the page.
 """
 
-import json
-import math
+import hashlib
 import re
+import shutil
 from html import escape
 from pathlib import Path
 
-from ..debrief.summary import corners_text, possessive, team
-from ..debrief.summary import findings as summary_findings
+from ..debrief.build import to_json
 
 REPO_URL = "https://github.com/raahimnawaz/parc-ferme"
-LIMIT_S = 0.5  # sector cells reach full colour at this many seconds
-MAX_TINT = 0.72
-
-CSS = """
-:root {
-  color-scheme: light;
-  --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
-  --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11, 11, 11, 0.10); --link: #256abf;
-  --s1: #2a78d6; --s2: #eb6834;
-  --div-neg: #2a78d6; --div-pos: #e34948; --div-mid: #f0efec;
-  --good: #0ca30c; --warn: #fab219; --bad: #d03b3b; --info: #898781;
-  --track: #c3c2b7;
-}
-@media (prefers-color-scheme: dark) {
-  :root:where(:not([data-theme="light"])) {
-    color-scheme: dark;
-    --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
-    --grid: #2c2c2a; --axis: #383835; --border: rgba(255, 255, 255, 0.10); --link: #86b6ef;
-    --s1: #3987e5; --s2: #d95926;
-    --div-neg: #3987e5; --div-pos: #e66767; --div-mid: #262625;
-    --track: #52514e;
-  }
-}
-:root[data-theme="dark"] {
-  color-scheme: dark;
-  --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
-  --grid: #2c2c2a; --axis: #383835; --border: rgba(255, 255, 255, 0.10); --link: #86b6ef;
-  --s1: #3987e5; --s2: #d95926;
-  --div-neg: #3987e5; --div-pos: #e66767; --div-mid: #262625;
-  --track: #52514e;
-}
-* { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; }
-body { margin: 0; background: var(--page); color: var(--ink);
-  font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
-a { color: var(--link); text-underline-offset: 2px; }
-a:focus-visible, [tabindex]:focus-visible, summary:focus-visible {
-  outline: 2px solid var(--link); outline-offset: 2px; }
-.top { border-bottom: 1px solid var(--border); background: var(--surface); }
-.top .in { max-width: 1080px; margin: 0 auto; padding: 12px 16px; display: flex; gap: 16px;
-  align-items: baseline; justify-content: space-between; }
-.brand { font-weight: 650; letter-spacing: -0.01em; color: var(--ink); text-decoration: none; }
-.top nav a { color: var(--ink-2); text-decoration: none; font-size: 14px; }
-main { max-width: 1080px; margin: 0 auto; padding: 32px 16px 56px; display: flex; flex-direction: column; gap: 48px; }
-h1, h2, h3 { margin: 0; line-height: 1.15; letter-spacing: -0.01em; text-wrap: balance; }
-h1 { font-size: clamp(30px, 5vw, 44px); font-weight: 650; }
-h2 { font-size: 24px; font-weight: 650; }
-h3 { font-size: 18px; font-weight: 600; }
-p { margin: 0; max-width: 72ch; }
-.eyebrow { font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 500; }
-.meta { color: var(--ink-2); }
-section { display: flex; flex-direction: column; gap: 18px; scroll-margin-top: 16px; }
-.sec-head { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--axis); padding-top: 16px; }
-.hero { gap: 12px; }
-.podium { display: flex; flex-wrap: wrap; gap: 8px 24px; margin: 4px 0 0; padding: 0; list-style: none; }
-.podium li { display: flex; gap: 8px; align-items: baseline; }
-.podium .pos { font-weight: 650; font-size: 18px; min-width: 1.2em; }
-.podium .who { font-weight: 600; }
-.podium .sub { color: var(--ink-2); font-size: 14px; }
-.findings { margin: 0; padding: 0; list-style: none; display: grid; gap: 12px; counter-reset: f; }
-.findings li { counter-increment: f; display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 4px 12px;
-  background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 14px 16px; }
-.findings li::before { content: counter(f); font-weight: 650; color: var(--muted); font-size: 18px; line-height: 1.3; }
-.findings p { font-size: 16px; }
-.findings a { grid-column: 2; font-size: 14px; }
-.card { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 16px; }
-.two { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; align-items: start; }
-@media (min-width: 860px) { .two { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
-figure { margin: 0; display: flex; flex-direction: column; gap: 12px; }
-figcaption, .note { font-size: 13.5px; color: var(--ink-2); max-width: 80ch; }
-.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13.5px; color: var(--ink-2); }
-.key { display: inline-flex; align-items: center; gap: 6px; }
-.swatch { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex: none; }
-.swatch.s1 { background: var(--s1); } .swatch.s2 { background: var(--s2); }
-.swatch.sq { border-radius: 2px; width: 14px; }
-.swatch.neg { background: var(--div-neg); } .swatch.pos { background: var(--div-pos); }
-details { font-size: 14px; }
-details summary { cursor: pointer; color: var(--ink-2); width: fit-content; }
-details[open] summary { margin-bottom: 8px; }
-.tablewrap { overflow-x: auto; }
-table { border-collapse: collapse; width: 100%; font-size: 14px; }
-th, td { padding: 7px 10px; text-align: left; border-bottom: 1px solid var(--grid); vertical-align: top; }
-th { font-size: 12px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
-td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-tr:last-child td { border-bottom: 0; }
-.car b { font-weight: 600; } .car span { color: var(--ink-2); }
-table.heat td.h { background: color-mix(in oklab, var(--div-mid), var(--div-pos) calc(var(--k) * 100%)); }
-table.heat td.h.neg { background: color-mix(in oklab, var(--div-mid), var(--div-neg) calc(var(--k) * 100%)); }
-table.heat td.h { border-bottom: 2px solid var(--surface); border-left: 2px solid var(--surface); }
-table.heat td.ref { color: var(--muted); }
-table.heat .se { color: var(--ink-2); font-size: 12.5px; margin-left: 4px; }
-table.heat th small { display: block; text-transform: none; letter-spacing: 0; font-size: 11.5px; }
-.scale { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink-2); flex-wrap: wrap; }
-.scale .ramp { width: 160px; height: 10px; border-radius: 2px;
-  background: linear-gradient(90deg, color-mix(in oklab, var(--div-mid), var(--div-neg) 72%), var(--div-mid),
-  color-mix(in oklab, var(--div-mid), var(--div-pos) 72%)); }
-/* dot plot and diverging bars, drawn in HTML so text stays legible at every width */
-.dp { position: relative; display: grid; grid-template-columns: var(--lw, 8.5rem) minmax(0, 1fr); }
-.dp-label { font-size: 14px; padding-right: 10px; display: flex; align-items: center; min-height: 32px;
-  border-bottom: 1px solid transparent; }
-.dp-label small { color: var(--ink-2); margin-left: 6px; }
-.dp-plot { position: relative; min-height: 32px; }
-.dp-grid { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--grid); }
-.dp-grid.zero { background: var(--axis); }
-.dp-axis { position: relative; height: 22px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
-.dp-axis span { position: absolute; top: 4px; transform: translateX(-50%); white-space: nowrap; }
-.whisker { position: absolute; height: 2px; border-radius: 1px; }
-.dot { position: absolute; width: 10px; height: 10px; border-radius: 50%; transform: translate(-50%, -50%);
-  box-shadow: 0 0 0 2px var(--surface); }
-.dot::after { content: ""; position: absolute; inset: -8px; border-radius: 50%; }
-.dot:hover, .dot:focus-visible { transform: translate(-50%, -50%) scale(1.25); }
-.s1 > .dot, .whisker.s1, .dot.s1 { background: var(--s1); }
-.whisker.s2, .dot.s2 { background: var(--s2); }
-.bar { position: absolute; top: 50%; height: 14px; transform: translateY(-50%); }
-.bar.pos { background: var(--div-pos); border-radius: 0 4px 4px 0; }
-.bar.neg { background: var(--div-neg); border-radius: 4px 0 0 4px; }
-.bar-val { position: absolute; top: 50%; transform: translateY(-50%); font-size: 12.5px; color: var(--ink-2);
-  font-variant-numeric: tabular-nums; white-space: nowrap; padding: 0 6px; }
-/* track map */
-.map svg { width: 100%; height: auto; display: block; }
-.map text { font-size: calc(var(--fs) * 1px); }
-.map .track { fill: none; stroke: var(--track); stroke-width: 14; stroke-linejoin: round; }
-.map .sector-line { stroke: var(--ink); stroke-width: 5; }
-.map .sector-label { fill: var(--ink); font-weight: 600; }
-.map .arrow { fill: var(--ink); }
-.map .corner { fill: var(--surface); stroke: var(--ink-2); stroke-width: 4; }
-.map .corner.slow { fill: var(--s1); stroke: var(--surface); }
-.map .corner.fast { fill: var(--s2); stroke: var(--surface); }
-.map .corner.flat { fill: var(--surface); stroke: var(--muted); }
-.map .corner-label { fill: var(--ink-2); font-variant-numeric: tabular-nums; }
-.map .hit { fill: transparent; }
-/* checks */
-.status { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; white-space: nowrap; }
-.status i { width: 18px; height: 18px; border-radius: 50%; display: inline-grid; place-items: center;
-  font-style: normal; font-size: 11px; font-weight: 700; color: #ffffff; }
-.status.pass i { background: var(--good); } .status.warn i { background: var(--warn); color: #0b0b0b; }
-.status.fail i { background: var(--bad); } .status.info i { background: var(--info); }
-.checks td:first-child { width: 1%; }
-.checks td.what { color: var(--ink-2); }
-.checks .name { font-weight: 600; display: block; color: var(--ink); }
-.callout { border-left: 3px solid var(--axis); padding: 10px 14px; background: var(--surface);
-  border-radius: 0 6px 6px 0; }
-.callout p { font-size: 14px; color: var(--ink-2); }
-.callout b { color: var(--ink); }
-footer { border-top: 1px solid var(--border); background: var(--surface); }
-footer .in { max-width: 1080px; margin: 0 auto; padding: 20px 16px 32px; font-size: 13px; color: var(--ink-2);
-  display: flex; flex-direction: column; gap: 8px; }
-footer p { max-width: 100ch; }
-.tip { position: fixed; z-index: 10; pointer-events: none; background: var(--surface); color: var(--ink);
-  border: 1px solid var(--border); border-radius: 6px; padding: 6px 9px; font-size: 13px;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12); max-width: 280px; }
-.tip b { display: block; font-variant-numeric: tabular-nums; }
-.tip span { color: var(--ink-2); }
-.sessions { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
-.sessions a { display: block; text-decoration: none; color: var(--ink); background: var(--surface);
-  border: 1px solid var(--border); border-radius: 6px; padding: 16px; }
-.sessions a:hover { border-color: var(--axis); }
-.sessions .t { font-weight: 600; font-size: 17px; display: block; }
-.sessions .m { color: var(--ink-2); font-size: 14px; }
-@media (max-width: 600px) {
-  .opt { display: none; }
-  table.heat td, table.heat th { padding: 7px 6px; }
-  table.heat .se { display: block; margin: 0; }
-  .car span { display: block; font-size: 12.5px; }
-  .dp { --lw: 6.8rem; }
-  .dp-axis span.minor { display: none; }
-  .map text { font-size: calc(var(--fs) * 1.35px); }
-}
-@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
-"""
-
-SCRIPT = """
-(() => {
-  const tip = document.createElement('div');
-  tip.className = 'tip'; tip.setAttribute('role', 'tooltip'); tip.hidden = true;
-  document.body.appendChild(tip);
-  const place = (x, y) => {
-    const r = tip.getBoundingClientRect();
-    let left = x + 14, top = y + 14;
-    if (left + r.width > innerWidth - 8) left = x - r.width - 14;
-    if (top + r.height > innerHeight - 8) top = y - r.height - 14;
-    tip.style.left = Math.max(8, left) + 'px'; tip.style.top = Math.max(8, top) + 'px';
-  };
-  const show = (el, x, y) => {
-    tip.replaceChildren();
-    const v = document.createElement('b'); v.textContent = el.dataset.v || '';
-    const l = document.createElement('span'); l.textContent = el.dataset.l || '';
-    tip.append(v, l); tip.hidden = false; place(x, y);
-  };
-  const hit = e => e.target.closest && e.target.closest('[data-v]');
-  document.addEventListener('pointermove', e => {
-    const el = hit(e); el ? show(el, e.clientX, e.clientY) : (tip.hidden = true);
-  });
-  document.addEventListener('pointerleave', () => { tip.hidden = true; });
-  document.addEventListener('focusin', e => {
-    const el = hit(e);
-    if (el) { const r = el.getBoundingClientRect(); show(el, r.right, r.bottom); }
-  });
-  document.addEventListener('focusout', () => { tip.hidden = true; });
-})();
-"""
+STATIC = Path(__file__).parent / "static"
+ASSETS = ("dash.css", "dash.js")
+FONTS = ("https://fonts.googleapis.com/css2?family=Saira:wdth,wght@100..125,300..500"
+         "&family=Martian+Mono:wdth,wght@75..112.5,300..400&display=swap")
+UPLOT_CSS = ("https://cdn.jsdelivr.net/npm/uplot@1.6.32/dist/uPlot.min.css",
+             "sha384-IfV0B7MIOYuO95kO9G5ySKPz/85zqFNOAs8iy4tkK5zd9izhJAB8b7lHrwYqqmYE")
+UPLOT_JS = ("https://cdn.jsdelivr.net/npm/uplot@1.6.32/dist/uPlot.iife.min.js",
+            "sha384-Gx3t0zdBAuQOuvvmaLZj7HKEiSgWTAs+VdtNY7wt19QDPTDQjFIwAuXDj0zeN00c")
+WORKSPACES = (("lap", "Lap analysis"), ("pace", "Race pace"), ("car", "Car model"), ("health", "Model health"))
+TEAM_SHORT = {"Haas F1 Team": "Haas", "Red Bull Racing": "Red Bull"}
+MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+FRONT_ROWS = 8
 
 DISCLAIMER = ("parc-ferme is an independent project and is not associated in any way with the Formula 1 companies. "
               "F1, FORMULA ONE, FORMULA 1, FIA FORMULA ONE WORLD CHAMPIONSHIP, GRAND PRIX and related marks are "
@@ -240,10 +50,14 @@ def e(x) -> str:
     return escape(str(x), quote=True)
 
 
-def signed(x: float, nd: int = 2, unit: str = "") -> str:
+def signed(x: float, nd: int = 2) -> str:
     if abs(x) < 0.5 * 10 ** -nd:
         x = 0.0
-    return f"{'+' if x > 0 else '−' if x < 0 else ''}{abs(x):.{nd}f}{unit}"
+    return f"{'+' if x > 0 else '−' if x < 0 else ''}{abs(x):.{nd}f}"
+
+
+def team(name: str) -> str:
+    return TEAM_SHORT.get(name, name)
 
 
 def slug(d: dict) -> str:
@@ -255,445 +69,435 @@ def slug(d: dict) -> str:
 
 def date_text(iso: str) -> str:
     y, m, dd = (int(x) for x in iso.split("-"))
-    months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October",
-              "November", "December"]
-    return f"{dd} {months[m - 1]} {y}"
+    return f"{dd} {MONTHS[m - 1]} {y}"
 
 
-def ticks(lo: float, hi: float, target: int = 6) -> list[float]:
-    raw = (hi - lo) / target
-    mag = 10 ** math.floor(math.log10(raw))
-    step = next(m * mag for m in (1, 2, 2.5, 5, 10) if m * mag >= raw)
-    return [round(v * step, 10) for v in range(math.floor(lo / step), math.ceil(hi / step) + 1)]
+def place(s: dict) -> str:
+    """The event's short name: Barcelona for the Barcelona Grand Prix."""
+    return re.sub(r"\s+Grand Prix$", "", s["name"])
 
 
-def tip(value: str, label: str, focus: bool = True) -> str:
-    return f'data-v="{e(value)}" data-l="{e(label)}"' + (' tabindex="0"' if focus else "")
+def _asset(name: str, prefix: str) -> str:
+    version = hashlib.sha256((STATIC / name).read_bytes()).hexdigest()[:10]
+    return f"{prefix}assets/{name}?v={version}"
 
 
-def status(kind: str) -> str:
-    icon, label = {"pass": ("✓", "Pass"), "warn": ("!", "Warn"), "fail": ("✕", "Fail"),
-                   "info": ("i", "Info")}[kind]
-    return f'<span class="status {kind}"><i aria-hidden="true">{icon}</i>{label}</span>'
+def _head(title: str, description: str, prefix: str, plots: bool = False) -> str:
+    uplot = (f'<link rel="stylesheet" href="{UPLOT_CSS[0]}" integrity="{UPLOT_CSS[1]}" crossorigin="anonymous">\n'
+             f'<script src="{UPLOT_JS[0]}" integrity="{UPLOT_JS[1]}" crossorigin="anonymous"></script>\n'
+             if plots else "")
+    return f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{e(title)}</title>
+<meta name="description" content="{e(description)}">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="{e(FONTS)}">
+{uplot}<link rel="stylesheet" href="{_asset('dash.css', prefix)}">
+</head>"""
 
 
-# ---- components ---------------------------------------------------------------------------------------------------
-
-def track_map(d: dict) -> str:
-    tr, grip = d["track"], d["grip"]
-    xs, ys = tr["x"], tr["y"]
-    span = max(max(xs) - min(xs), max(ys) - min(ys))
-    font = round(span / 36, 1)
-
-    # Each timing line gets its sector's name where that sector starts, on whichever side of the track leaves it
-    # furthest from the corner labels and from the track itself.
-    occupied = [(c["lx"], c["ly"]) for c in tr["corners"]] + [(c["x"], c["y"]) for c in tr["corners"]]
-    sector_labels = []
-    for k, m in enumerate(tr["lines"]):
-        track_pts = [(x, y) for x, y in zip(xs, ys, strict=True) if math.hypot(x - m["x"], y - m["y"]) > 1.5 * font]
-        best = None
-        for sign in (1, -1):
-            px, py = m["x"] + sign * 2.0 * font * m["nx"], m["y"] + sign * 2.0 * font * m["ny"]
-            clear = min(math.hypot(px - x, py - y) for x, y in occupied + track_pts)
-            if best is None or clear > best[0]:
-                best = (clear, px, py)
-        sector_labels.append((f"S{k + 1}", best[1], best[2]))
-    label_x = [c["lx"] for c in tr["corners"]] + [x for _, x, _ in sector_labels]
-    label_y = [c["ly"] for c in tr["corners"]] + [y for _, _, y in sector_labels]
-    pad = 1.2 * font
-    x0, x1 = min(xs + label_x) - pad, max(xs + label_x) + pad
-    y0, y1 = min(ys + label_y) - pad, max(ys + label_y) + pad
-    w, h = x1 - x0, y1 - y0
-    path = "M" + " L".join(f"{x:.1f},{y:.1f}" for x, y in zip(xs, ys, strict=True)) + " Z"
-    used = {c["corner"]: c for c in grip["corners"]}
-    w_slow = min(used.values(), key=lambda c: c["w"])["corner"] if used else None
-    w_fast = max(used.values(), key=lambda c: c["w"])["corner"] if used else None
-    parts = [f'<path class="track" d="{path}"/>']
-    half = 0.75 * font
-    for m in tr["lines"]:
-        parts.append(f'<line class="sector-line" x1="{m["x"] - half * m["nx"]:.1f}" y1="{m["y"] - half * m["ny"]:.1f}" '
-                     f'x2="{m["x"] + half * m["nx"]:.1f}" y2="{m["y"] + half * m["ny"]:.1f}"/>')
-    for name, x, y in sector_labels:
-        parts.append(f'<text class="sector-label" x="{x:.1f}" y="{y:.1f}" text-anchor="middle" '
-                     f'dominant-baseline="middle">{name}</text>')
-    # direction of travel: an arrowhead a little after the start line, pointing along the track
-    i = max(2, int(0.012 * len(xs)))
-    tx, ty = xs[i + 1] - xs[i - 1], ys[i + 1] - ys[i - 1]
-    angle = math.degrees(math.atan2(ty, tx))
-    a = 0.45 * font
-    parts.append(f'<path class="arrow" d="M{a:.1f},0 L{-a:.1f},{-0.8 * a:.1f} L{-a:.1f},{0.8 * a:.1f} Z" '
-                 f'transform="translate({xs[i]:.1f},{ys[i]:.1f}) rotate({angle:.1f})"/>')
-    for c in tr["corners"]:
-        cls = "corner" + (" flat" if c["flat_out"] else "") + (" slow" if c["number"] == w_slow else "") + \
-            (" fast" if c["number"] == w_fast else "")
-        speed = f"{c['kph']:.0f} km/h" if c["kph"] == c["kph"] else "no reading"
-        if c["flat_out"]:
-            label = "flat out, not used for grip"
-        else:
-            label = f"{100 * c['w']:.0f}% of grip from downforce"
-        parts.append(f'<g {tip(f"Turn {c["label"]} · {speed}", label)}><circle class="hit" cx="{c["x"]:.1f}" '
-                     f'cy="{c["y"]:.1f}" r="{font}"/><circle class="{cls}" cx="{c["x"]:.1f}" cy="{c["y"]:.1f}" '
-                     f'r="{font * 0.32:.1f}"/></g>')
-        parts.append(f'<text class="corner-label" x="{c["lx"]:.1f}" y="{c["ly"]:.1f}" '
-                     f'text-anchor="middle" dominant-baseline="middle">{e(c["label"])}</text>')
-    rows = "".join(
-        f'<tr><td>Turn {e(c["label"])}</td><td class="num">{c["kph"]:.0f}</td>'
-        f'<td class="num">{"flat out" if c["flat_out"] else f"{100 * c["w"]:.0f}%"}</td>'
-        f'<td>{next(s["sector"] for s in d["sectors"] if c["number"] in s["corners"])}</td></tr>'
-        for c in tr["corners"])
-    return f"""<figure class="map card">
-<svg viewBox="{x0:.0f} {y0:.0f} {w:.0f} {h:.0f}" style="--fs:{font}" role="img"
-aria-label="Track map of {e(d['session']['circuit'])}
-with the three timing sectors and the corners numbered">{''.join(parts)}</svg>
-<div class="legend"><span class="key"><span class="swatch s1"></span>Slowest lifted corner</span>
-<span class="key"><span class="swatch s2"></span>Fastest lifted corner</span></div>
-<figcaption>Ticks are the timing lines, each labelled with the sector that starts there; the arrow shows the
-direction of travel. The two coloured corners set the ends of the grip scale below.</figcaption>
-<details><summary>Table: corners</summary><div class="tablewrap"><table><thead><tr><th>Corner</th>
-<th class="num">Median minimum speed, km/h</th><th class="num">Grip from downforce</th><th>Sector</th></tr></thead>
-<tbody>{rows}</tbody></table></div></details>
-</figure>"""
+def _footer(code: dict | None = None) -> str:
+    built = ""
+    if code:
+        built = (f' Built from <a href="{REPO_URL}/commit/{e(code["commit"])}">{e(code["commit"])}</a>'
+                 + (" with uncommitted changes" if code["dirty"] else "") + ".")
+    return (f'<footer class="foot"><p>{SOURCES} Code, models and test benches: <a href="{REPO_URL}">parc-ferme on '
+            f'GitHub</a>, MIT licence.{built}</p><p>{DISCLAIMER}</p></footer>')
 
 
-def traffic_note(p: dict, sectors: list) -> str:
-    near, mid = p["traffic"][0], p["traffic"][1]
-    worst = max(range(1, 4), key=lambda k: near[f"s{k}"])
-    quiet = [str(k) for k in range(1, 4) if abs(near[f"s{k}"]) < 2 * near[f"s{k}_se"]]
-    text = (f"Traffic is taken out, not filtered out. Running within 1 s of the car ahead cost "
-            f"{signed(near['lap'], 2)} ± {near['lap_se']:.2f} s a lap, {signed(near[f's{worst}'], 2)} s of it in "
-            f"sector {worst} ({corners_text(sectors[worst - 1])}).")
-    if quiet:
-        text += f" In sector{'s' if len(quiet) > 1 else ''} {' and '.join(quiet)} it was too small to measure."
-    measurable = abs(mid["lap"]) >= 2 * mid["lap_se"]
-    text += (f" Between 1 and 2 s behind, the cost was {signed(mid['lap'], 2)} ± {mid['lap_se']:.2f} s"
-             + ("." if measurable else ", too small to measure."))
-    return f'<p class="note">{e(text)}</p>'
+# ---------------- lap analysis (drawn by dash.js) ----------------
+
+def car_order(d: dict) -> list[str]:
+    """Cars with telemetry, in race-pace order, then the rest by fastest lap."""
+    laps = d["telemetry"]["laps"]
+    ranked = [r["driver"] for r in d["pace"]["cars"] if r["driver"] in laps]
+    return ranked + sorted((c for c in laps if c not in ranked), key=lambda c: laps[c]["fastest"]["time"])
 
 
-def pace_table(d: dict) -> str:
-    p, cars, sectors = d["pace"], d["cars"], d["sectors"]
-    ref = p["reference"]
-    head = "".join(f'<th class="num">S{s["sector"]}<small>{e(corners_text(s))}</small></th>' for s in sectors)
-    body = []
-    for rank, r in enumerate(p["cars"], start=1):
-        name = cars[r["driver"]]["last"]
-        cells = []
-        for k in range(1, 4):
-            v, se = r[f"s{k}"], r[f"s{k}_se"]
-            if r["driver"] == ref:
-                cells.append('<td class="num ref">ref</td>')
-                continue
-            t = min(abs(v) / LIMIT_S, 1.0) * MAX_TINT
-            cls = "h neg" if v < 0 else "h"
-            hover = tip(f"{signed(v, 3)} ± {se:.3f} s", f"{name}, sector {k}, against {cars[ref]['last']}", False)
-            cells.append(f'<td class="num {cls}" style="--k:{t:.3f}" {hover}>{signed(v, 2)}</td>')
-        lap = ('<td class="num ref">ref</td>' if r["driver"] == ref else
-               f'<td class="num"><b>{signed(r["lap"], 2)}</b><span class="se">± {r["lap_se"]:.2f}</span></td>')
-        body.append(f'<tr><td class="num opt">{rank}</td><td class="car"><b>{e(name)}</b> <span>'
-                    f'{e(team(r["team"]))}</span></td>{lap}{"".join(cells)}<td class="num opt">{r["laps"]}</td></tr>')
-    se_rows = "".join(
-        f'<tr><td>{e(cars[r["driver"]]["last"])}</td>'
-        + f'<td class="num">{signed(r["lap"], 3)} ± {r["lap_se"]:.3f}</td>'
-        + "".join(f'<td class="num">{signed(r[f"s{k}"], 3)} ± {r[f"s{k}_se"]:.3f}</td>' for k in range(1, 4))
-        + "</tr>" for r in p["cars"])
-    excluded = ""
-    if p["excluded"]:
-        names = ", ".join(e(cars[x]["last"]) for x in p["excluded"])
-        excluded = (f'<p class="note">Not shown: {names}, with fewer than {p["min_laps"]} green laps.</p>')
-    return f"""<div class="scale" aria-hidden="true"><span>Faster than {e(cars[ref]['last'])}</span>
-<span class="ramp"></span><span>Slower</span><span>· full colour at {LIMIT_S:g} s a lap</span></div>
-<div class="tablewrap card" style="padding:0"><table class="heat"><caption class="note" style="text-align:left;
-padding:12px 12px 0">Seconds a lap against {e(possessive(cars[ref]['last']))} {e(team(cars[ref]['team']))}, the
-fastest car, in total and by timing sector. ± is one standard error.</caption><thead><tr><th class="num opt">#</th>
-<th>Car</th><th class="num">Lap</th>{head}<th class="num opt">Laps</th></tr></thead><tbody>{''.join(body)}</tbody>
-</table></div>
-<details><summary>Table: every gap with its standard error</summary><div class="tablewrap"><table><thead><tr>
-<th>Car</th><th class="num">Lap, s</th><th class="num">S1, s</th><th class="num">S2, s</th><th class="num">S3, s</th>
-</tr></thead><tbody>{se_rows}</tbody></table></div></details>
-{excluded}
-{traffic_note(p, sectors)}"""
-
-
-def dot_plot(d: dict) -> str:
-    g = d["grip"]
-    rows = sorted(g["teams"], key=lambda r: r["fast_corner_pct"], reverse=True)
-    vals = [r[k] + s * r[k.replace("pct", "se")] for r in rows for k in ("slow_corner_pct", "fast_corner_pct")
-            for s in (-1, 1)]
-    t = ticks(min(vals + [0]), max(vals + [0]))
-    lo, hi = t[0], t[-1]
-
-    def x(v):
-        return 100 * (v - lo) / (hi - lo)
-
-    grid = "".join(f'<div class="dp-grid{" zero" if v == 0 else ""}" style="left:{x(v):.2f}%"></div>' for v in t)
-    used = {c["corner"]: c for c in g["corners"]}
-    slow_c = min(used.values(), key=lambda c: c["w"])
-    fast_c = max(used.values(), key=lambda c: c["w"])
-    series = (("slow_corner_pct", "s1", -5, "slow corners"), ("fast_corner_pct", "s2", 5, "fast corners"))
-    out = []
-    for r in rows:
-        marks = []
-        for key, cls, dy, label in series:
-            v, se = r[key], r[key.replace("pct", "se")]
-            top = f"calc(50% + {dy}px)"
-            marks.append(f'<div class="whisker {cls}" style="left:{x(v - se):.2f}%;width:{x(v + se) - x(v - se):.2f}%;'
-                         f'top:calc(50% + {dy - 1}px)"></div>')
-            marks.append(f'<div class="dot {cls}" style="left:{x(v):.2f}%;top:{top}" role="img" '
-                         f'aria-label="{e(team(r["team"]))}, {label}: {signed(v, 1)} percent, plus or minus '
-                         f'{se:.1f}" {tip(f"{signed(v, 1)} ± {se:.1f}%", f"{team(r["team"])}, {label}")}></div>')
-        out.append(f'<div class="dp-label">{e(team(r["team"]))}</div><div class="dp-plot">{"".join(marks)}</div>')
-    axis = "".join(f'<span class="{"minor" if (i - t.index(0)) % 2 else ""}" style="left:{x(v):.2f}%">'
-                   f'{signed(v, 0, "%") if v else "field"}</span>' for i, v in enumerate(t))
-    table = "".join(
-        f'<tr><td>{e(team(r["team"]))}</td><td class="num">{signed(r["slow_corner_pct"], 1)} ± '
-        f'{r["slow_corner_se"]:.1f}</td><td class="num">{signed(r["fast_corner_pct"], 1)} ± '
-        f'{r["fast_corner_se"]:.1f}</td><td class="num">{signed(r["mech_pct"], 1)} ± {r["mech_se"]:.1f}</td>'
-        f'<td class="num">{signed(r["downforce_pct"], 1)} ± {r["downforce_se"]:.1f}</td></tr>' for r in rows)
-    n_rows = len(rows)
-    return f"""<figure class="card">
-<div class="legend"><span class="key"><span class="swatch s1"></span>Slow corners: Turn {slow_c['corner']},
-{slow_c['real_kph']:.0f} km/h, {100 * slow_c['w']:.0f}% of grip from downforce</span>
-<span class="key"><span class="swatch s2"></span>Fast corners: Turn {fast_c['corner']}, {fast_c['real_kph']:.0f} km/h,
-{100 * fast_c['w']:.0f}%</span></div>
-<div class="dp" role="group" aria-label="Grip relative to the mean team, slow and fast corners, {n_rows} teams">
-<div class="dp-plot" style="position:absolute;left:var(--lw,8.5rem);right:0;top:0;bottom:22px"
-aria-hidden="true">{grid}</div>
-{''.join(out)}<div></div><div class="dp-axis" aria-hidden="true">{axis}</div></div>
-<figcaption>Lateral grip against the mean team, in percent. Dots are the estimates; whiskers are ± one standard
-error, from refitting with each corner left out in turn.</figcaption>
-<details><summary>Table: grip by team</summary><div class="tablewrap"><table><thead><tr><th>Team</th>
-<th class="num">Slow corners</th><th class="num">Fast corners</th><th class="num">Tyre grip</th>
-<th class="num">Downforce</th></tr></thead><tbody>{table}</tbody></table></div></details>
-</figure>"""
-
-
-def corner_bars(d: dict) -> str:
-    rows = sorted(d["grip"]["corners"], key=lambda c: c["corner"])
-    m = max(abs(c["diff_kph"]) for c in rows)
-    lim = ticks(0, m, 3)[-1]
-    span_kph = 1.35 * lim  # room for the value at the end of the longest bar
-
-    def x(v):
-        return 50 + 50 * v / span_kph
-
-    out = []
-    for c in rows:
-        v = c["diff_kph"]
-        cls = "pos" if v > 0 else "neg"
-        left, width = (x(0), x(v) - x(0)) if v > 0 else (x(v), x(0) - x(v))
-        label_pos = f"left:{x(v):.2f}%" if v > 0 else f"right:{100 - x(v):.2f}%"
-        hover = tip(f"{signed(v, 1)} km/h",
-                    f"Turn {c['corner']}: sim {c['sim_kph']:.0f}, real {c['real_kph']:.0f} km/h")
-        out.append(f'<div class="dp-label">Turn {c["corner"]} <small>{c["real_kph"]:.0f} km/h</small></div>'
-                   f'<div class="dp-plot"><div class="bar {cls}" style="left:{left:.2f}%;width:{width:.2f}%" {hover}>'
-                   f'</div><span class="bar-val" style="{label_pos}">{signed(v, 0)}</span></div>')
-    t = [-lim, -lim / 2, 0, lim / 2, lim]
-    grid = "".join(f'<div class="dp-grid{" zero" if v == 0 else ""}" style="left:{x(v):.2f}%"></div>' for v in t)
-    axis = "".join(f'<span style="left:{x(v):.2f}%">{signed(v, 0)}</span>' for v in t)
-    table = "".join(f'<tr><td>Turn {c["corner"]}</td><td class="num">{c["real_kph"]:.0f}</td>'
-                    f'<td class="num">{c["sim_kph"]:.0f}</td><td class="num">{signed(c["diff_kph"], 1)}</td></tr>'
-                    for c in rows)
-    return f"""<figure>
-<div class="legend"><span class="key"><span class="swatch sq neg"></span>Sim slower than the cars</span>
-<span class="key"><span class="swatch sq pos"></span>Sim faster</span></div>
-<div class="dp" style="--lw:9.5rem" role="group" aria-label="Simulated minus real corner minimum speed, km/h">
-<div class="dp-plot" style="position:absolute;left:var(--lw);right:0;top:0;bottom:22px"
-aria-hidden="true">{grid}</div>{''.join(out)}<div></div><div class="dp-axis" aria-hidden="true">{axis}</div></div>
-<details><summary>Table: corner speeds</summary><div class="tablewrap"><table><thead><tr><th>Corner</th>
-<th class="num">Real, km/h</th><th class="num">Sim, km/h</th><th class="num">Sim − real</th></tr></thead>
-<tbody>{table}</tbody></table></div></details>
-</figure>"""
-
-
-def model_checks(d: dict) -> list[tuple[str, str, str, str]]:
-    """(status, name, what it compares, result) for each model check."""
-    g, p, b = d["grip"], d["pace"], d["bench"]
-    rows = []
-    worst_m = max(abs(r["mech_err"]) for r in b["rows"])
-    worst_d = max(abs(r["downforce_err"]) for r in b["rows"])
-    rows.append(("pass" if b["passed"] else "fail", "Grip · test bench",
-                 f"{len(b['rows'])} synthetic teams with known grip and downforce, run through the lap sim and "
-                 f"rendered as OpenF1-style telemetry, then measured like a real session",
-                 f"Largest error {worst_m:.2f} points on tyre grip (tolerance {b['tolerance_pct']['mech']:g}) and "
-                 f"{worst_d:.2f} on downforce (tolerance {b['tolerance_pct']['downforce']:g})"))
-    ca = g["clean_air"]
-    if ca:
-        se = {r["team"]: r for r in g["teams"]}
-        moves = []
-        for r in ca["teams"]:
-            s = se[r["team"]]
-            for key, k_se, label in (("slow", "slow_corner_se", "slow"), ("fast", "fast_corner_se", "fast")):
-                delta = r[key] - s[key + "_corner_pct"]
-                moves.append((abs(delta) / max(s[k_se], 1e-9), abs(delta), label, team(r["team"])))
-        worst = max(moves)
-        fast_max = max((m for m in moves if m[2] == "fast"), key=lambda m: m[1])
-        kind = "pass" if worst[0] <= 2 else "warn"
-        rows.append((kind, "Grip · dirty air",
-                     f"Refitted on the {ca['laps']} laps with no car within {ca['gap_s']:g} s ahead",
-                     f"Fast-corner grip moved {fast_max[1]:.1f} points at most ({fast_max[3]}). The largest move "
-                     f"against its uncertainty: {worst[3]}, {worst[2]} corners, {worst[1]:.1f} points "
-                     f"({worst[0]:.1f} standard errors)"))
-    pb = d.get("pace_bench")
-    if pb:
-        rows.append(("pass" if pb["passed"] else "fail", "Pace · test bench",
-                     f"A synthetic race of {pb['cars']} cars over {pb['laps']} laps with known sector gaps, tyre, fuel "
-                     f"and traffic effects, lap-to-lap noise and a few wrecked laps",
-                     f"Every car's gap in every sector recovered to within {pb['max_error_s']:.3f} s "
-                     f"(tolerance {pb['tolerance_s']:.2f} s)"))
-    h = p["holdout"]
-    rows.append(("pass" if h["model_err_s"] < h["baseline_err_s"] else "fail", "Pace · held-out laps",
-                 f"Fitted on odd-numbered laps, asked for the lap times of the {h['laps']} even-numbered ones",
-                 f"Median error {h['model_err_s']:.2f} s, against {h['baseline_err_s']:.2f} s for each car's own "
-                 f"median lap"))
-    f = g["field"]
-    short = sum(s["line_short_m"] for s in g["sections"] if s["line_short_m"] == s["line_short_m"])
-    rows.append(("warn", "Field car · corner speeds",
-                 f"The sim's car, with grip and downforce fitted so its corner minimum speeds match the field's "
-                 f"(μ {f['mu']:.2f}, CLA {f['cla']:.2f} m²)",
-                 f"Misses by {f['rms_kph']:.0f} km/h rms, with a pattern: see below. The team comparisons above "
-                 f"don't use it. The modelled line is also {short:.0f} m a lap shorter than the cars drove"))
-    return rows
-
-
-def checks_section(d: dict) -> str:
-    data_rows = []
-    for c in d["checks"]:
-        kind = "pass" if c["passed"] else ("fail" if c["gating"] else "warn")
-        data_rows.append(f'<tr><td>{status(kind)}</td><td><span class="name">'
-                         f'{e(DATA_CHECK_NAMES.get(c["name"], c["name"]))}</span></td>'
-                         f'<td class="what">{e(c["detail"])}</td></tr>')
-    model_rows = "".join(
-        f'<tr><td>{status(k)}</td><td><span class="name">{e(n)}</span></td><td class="what">{e(w)}. '
-        f'<span style="color:var(--ink)">{e(r)}.</span></td></tr>' for k, n, w, r in model_checks(d))
-    code = d["code"]
-    version = (f'<a href="{REPO_URL}/commit/{e(code["commit"])}">{e(code["commit"])}</a>'
-               + (" with uncommitted changes" if code["dirty"] else ""))
-    return f"""<section id="checks"><div class="sec-head"><div class="eyebrow">How far to trust it</div>
-<h2>Checks</h2></div>
-<p>Each model behind the numbers above has to recover known answers on a test bench before it runs on a session,
-and its output is then checked against what the session's own data can confirm. A session is only published if
-every gating data check passes.</p>
-<h3>Models</h3>
-<div class="tablewrap card" style="padding:0"><table class="checks"><tbody>{model_rows}</tbody></table></div>
-<h3>Field car against real corner speeds</h3>
-<p class="note">Simulated minus real minimum speed at each corner the drivers lift for. It is too fast where a corner
-is the second half of a sequence and at Turn 9, where drivers don't use the full limit, and too slow in the section
-rebuilt since the track-width survey, where widths are a guess.</p>
-{corner_bars(d)}
-<h3>Data</h3>
-<div class="tablewrap card" style="padding:0"><table class="checks"><tbody>{''.join(data_rows)}</tbody></table></div>
-<p class="note">Built from parc-ferme {version} on {e(d['generated_utc'])} UTC.</p>
+def lap_workspace(d: dict) -> str:
+    cars = d["cars"]
+    options = "".join(f'<option value="{e(c)}">{e(cars[c]["last"])} · {e(team(cars[c]["team"]))}</option>'
+                      for c in car_order(d))
+    return f"""<section class="ws" id="ws-lap">
+  <div class="toolbar">
+    <label class="sel a"><i class="sw" id="swA"></i><span>Car A</span><select id="selA">{options}</select></label>
+    <span class="vs">vs</span>
+    <label class="sel b"><i class="sw" id="swB"></i><span>Car B</span><select id="selB">{options}</select></label>
+    <div class="seg" role="group" aria-label="Lap">
+      <button data-lap="fastest" class="on">Fastest lap</button><button data-lap="typical">Typical lap</button>
+    </div>
+    <label class="tog"><input type="checkbox" id="simOn"><span>Lap sim</span></label>
+    <div class="zoom" id="zoom"></div>
+  </div>
+  <div class="lap-grid">
+    <div class="traces card" id="traces"></div>
+    <aside class="side">
+      <div class="card map-card">
+        <div class="card-h"><span>Track</span>
+          <div class="seg sm" role="group">
+            <button data-map="gain" class="on">Who's faster</button><button data-map="sectors">Sectors</button>
+          </div>
+        </div>
+        <svg id="map" role="img" aria-label="Track map"></svg><div class="map-legend" id="mapLegend"></div>
+      </div>
+      <div class="card">
+        <div class="card-h"><span>Lap summary</span><span class="dim" id="lapNote"></span></div>
+        <table class="sum" id="summary"></table>
+        <div class="sum-legend" id="sumLegend">
+          <span><i class="pp"></i>fastest of the race</span><span><i class="pg"></i>driver's best</span>
+        </div>
+        <div class="sum-note" id="sumNote" hidden></div>
+      </div>
+      <div class="card" id="windowCard">
+        <div class="card-h"><span>Selected stretch</span><button class="link" id="clearRef" hidden>clear</button></div>
+        <div id="window" class="dim">Click the traces to drop a reference cursor (red); the stretch between it and the
+          cursor is measured here.</div>
+      </div>
+    </aside>
+  </div>
 </section>"""
 
 
-def page(d: dict, home: str = "../../") -> str:
-    s, c = d["session"], d["conditions"]
-    cars = d["cars"]
-    rnd = f"Round {s['round']} · " if s.get("round") else ""
-    weather = ("wet" if c["rain"] else "dry") + f", air {c['air_c']:.0f} °C, track {c['track_c']:.0f} °C"
-    podium = "".join(
-        f'<li><span class="pos">{p["position"]}</span><span><span class="who">{e(cars[p["driver"]]["name"])}</span> '
-        f'<span class="sub">{e(team(p["team"]))}'
-        + (f' · from P{p["grid"]}' if p.get("grid") else "") + "</span></span></li>" for p in d["podium"])
-    findings = "".join(f'<li><p>{e(f["text"])}</p><a href="{e(f["href"])}">'
-                       f'{"See pace by sector" if f["href"] == "#pace" else "See grip by team"}</a></li>'
-                       for f in summary_findings(d))
-    title = f"{s['name']} {s['session_name'].lower()} debrief"
-    g = d["grip"]
-    return f"""<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{e(title)} · parc-ferme</title>
-<meta name="description" content="Engineering debrief of the {s['year']} {e(s['name'])}: race pace by sector and
-grip by team, from public timing data, with every model checked.">
-<style>{CSS}</style></head>
-<body>
-<header class="top"><div class="in"><a class="brand" href="{home}">parc-ferme</a>
-<nav><a href="{home}">{s['year']} debriefs</a></nav></div></header>
+def page_data(d: dict) -> str:
+    """The telemetry dash.js draws, as JSON safe to embed in a script element."""
+    t = d["telemetry"]
+    data = {"L": t["L"], "dx": t["dx"], "n": t["n"], "sectors": t["sectors"], "corners": t["corners"],
+            "zones": t["zones"], "map": {k: d["track"][k] for k in ("x", "y", "corners", "lines")},
+            "cars": {c: {**d["cars"][c], **t["laps"][c]} for c in car_order(d)},
+            "best": t["best"], "sims": t["sims"],
+            "adjusted": {r["driver"]: [r["lap"], r["lap_se"]] for r in d["pace"]["cars"]}}
+    return to_json(data).replace("<", "\\u003c")
+
+
+# ---------------- race pace ----------------
+
+def _scale(rows: list[dict]) -> tuple[float, float]:
+    neg = min([0.0] + [sum(min(r[f"s{k}"], 0.0) for k in (1, 2, 3)) for r in rows])
+    pos = max([0.0] + [sum(max(r[f"s{k}"], 0.0) for k in (1, 2, 3)) for r in rows])
+    return min(-0.25, round(1.05 * neg - 0.05, 1)), max(0.5, round(1.05 * pos + 0.05, 1))
+
+
+def _pace_rows(rows: list[dict], first: int, d: dict) -> str:
+    cars, ref = d["cars"], d["pace"]["reference"]
+    lo, hi = _scale(rows)
+
+    def at(v):
+        return 100 * (v - lo) / (hi - lo)
+
+    out = []
+    for pos, r in enumerate(rows, start=first):
+        c = cars[r["driver"]]
+        head = (f'<div class="pb-row"><span class="rk">{pos}</span>'
+                f'<i class="chip" style="background:{e(c["colour"])}"></i>'
+                f'<span class="nm">{e(c["last"])}<small>{e(team(r["team"]))}</small></span><div class="pb-bar">'
+                f'<div class="z" style="left:{at(0):.2f}%"></div>')
+        if r["driver"] == ref:
+            out.append(f'{head}<span class="reftag" style="left:{at(0):.2f}%">reference</span></div>'
+                       '<span class="vv">—</span></div>')
+            continue
+        segs, neg, posv = [], 0.0, 0.0
+        for k in (1, 2, 3):
+            v = r[f"s{k}"]
+            a, b = (neg + v, neg) if v < 0 else (posv, posv + v)
+            neg, posv = (neg + v, posv) if v < 0 else (neg, posv + v)
+            if at(b) > at(a):
+                segs.append(f'<i class="sg s{k}" style="left:{at(a):.2f}%;width:{at(b) - at(a):.2f}%" '
+                            f'data-v="{signed(v)} s" '
+                            f'data-l="{e(c["last"])} · sector {k} vs {e(cars[ref]["last"])}"></i>')
+        segs.append(f'<i class="nt" style="left:{min(at(r["lap"]), 99.5):.2f}%"></i>')
+        out.append(f'{head}{"".join(segs)}</div><span class="vv">{signed(r["lap"])} '
+                   f'<small>± {r["lap_se"]:.2f}</small></span></div>')
+    return "".join(out)
+
+
+def pace_workspace(d: dict) -> str:
+    p, cars, s = d["pace"], d["cars"], d["session"]
+    rows, ref = p["cars"], cars[p["reference"]]
+    names = [f"S{x['sector']}" + (f" · T{x['corners'][0]}–{x['corners'][-1]}" if x["corners"] else "")
+             for x in d["sectors"]]
+    rest = rows[FRONT_ROWS:]
+    more = (f'<details class="more"><summary>Show the other {len(rest)} cars <span class="dim">(own scale)</span>'
+            f'</summary>{_pace_rows(rest, FRONT_ROWS + 1, d)}</details>' if rest else "")
+    traffic = "".join(
+        f'<tr><td>{e(x["gap"])}</td>'
+        + "".join(f'<td class="n">{signed(x[f"s{k}"])} <small>± {x[f"s{k}_se"]:.2f}</small></td>' for k in (1, 2, 3))
+        + f'<td class="n"><b>{signed(x["lap"])}</b> <small>± {x["lap_se"]:.2f}</small></td>'
+        + f'<td class="n">{x["laps"]}</td></tr>'
+        for x in p["traffic"])
+    h = p["holdout"]
+    excluded = ""
+    if p["excluded"]:
+        who = ", ".join(e(cars[c]["last"]) if c in cars else e(c) for c in p["excluded"])
+        excluded = f" Not enough green laps for an estimate (fewer than {p['min_laps']}): {who}."
+    return f"""<section class="ws" id="ws-pace" hidden>
+  <div class="ws-grid">
+    <div class="card span2">
+      <div class="card-h"><span>Time lost per lap to {e(ref['last'])}'s {e(team(ref['team']))}, by sector</span>
+        <span class="dim">all green laps · tyres, fuel and traffic taken out</span></div>
+      <div class="pb-legend"><span><i class="s1"></i>{e(names[0])}</span><span><i class="s2"></i>{e(names[1])}</span>
+        <span><i class="s3"></i>{e(names[2])}</span><span><i class="t"></i>net gap</span>
+        <span class="dim">left of the line = faster than the reference in that sector</span></div>
+      {_pace_rows(rows[:FRONT_ROWS], 1, d)}
+      {more}
+    </div>
+    <div class="card">
+      <div class="card-h"><span>Cost of following, per lap</span>
+        <span class="dim">smallest gap to the car ahead during the lap</span></div>
+      <table class="tbl"><thead><tr><th>Gap ahead</th><th class="n">S1</th><th class="n">S2</th><th class="n">S3</th>
+        <th class="n">Lap</th><th class="n">Laps</th></tr></thead><tbody>{traffic}</tbody></table>
+    </div>
+    <div class="card">
+      <div class="card-h"><span>Pace model</span></div>
+      <p class="dim">Each green lap's sector times at the {e(place(s))} {e(s['session_name'].lower())}, fitted with one
+        effect per car plus tyre compound and age, lap number and traffic. Fitted on odd laps it predicts even ones to
+        {h['model_err_s']:.2f} s (a car's own median lap: {h['baseline_err_s']:.2f} s). ± is one standard
+        error.{excluded}</p>
+    </div>
+  </div>
+</section>"""
+
+
+# ---------------- car model ----------------
+
+def car_workspace(d: dict) -> str:
+    cm, g, cars = d["car_model"], d["grip"], d["cars"]
+    badge = {"Rules": "rules", "Fitted": "fit", "Measured": "meas", "Nominal": "nom"}
+    biggest = max(abs(p["effect_s"]) for p in cm["params"]) or 1.0
+    params = []
+    for p in cm["params"]:
+        w = 50 * abs(p["effect_s"]) / biggest
+        side = f"left:50%;width:{w:.1f}%" if p["effect_s"] > 0 else f"left:{50 - w:.1f}%;width:{w:.1f}%"
+        note = f'<small class="warnnote">{e(p["note"])}</small>' if p.get("note") else ""
+        value = f'{p["value"]:,.3f}'.rstrip("0").rstrip(".")
+        params.append(
+            f'<tr><td>{e(p["name"])}<small class="sym">{e(p["sym"])}</small>{note}</td>'
+            f'<td class="n">{value} <small>{e(p["unit"])}</small></td>'
+            f'<td><span class="badge {badge[p["source"]]}">{e(p["source"])}</span></td>'
+            f'<td class="n">{signed(p["effect_s"], 3)} s</td><td class="effcell"><div class="eff"><i class="mid"></i>'
+            f'<i class="bar {"slower" if p["effect_s"] > 0 else "faster"}" style="{side}"></i></div></td></tr>')
+
+    rows = sorted(g["teams"], key=lambda r: -r["fast_corner_pct"])
+    ends = [r[k] + sign * r[k.replace("pct", "se")] for r in rows for k in ("slow_corner_pct", "fast_corner_pct")
+            for sign in (-1, 1)]
+    lo, hi = min(ends + [0]) - 0.5, max(ends + [0]) + 0.5
+
+    def gx(v):
+        return 100 * (v - lo) / (hi - lo)
+
+    colour = {c["team"]: c["colour"] for c in cars.values()}
+    grip = []
+    for r in rows:
+        marks = []
+        for key, cls, dy, label in (("slow_corner_pct", "gs", -5, "slow corners"),
+                                    ("fast_corner_pct", "gf", 5, "fast corners")):
+            v, se = r[key], r[key.replace("pct", "se")]
+            marks.append(f'<i class="wh {cls}" style="left:{gx(v - se):.2f}%;width:{gx(v + se) - gx(v - se):.2f}%;'
+                         f'top:calc(50% + {dy - 1}px)"></i><i class="dt {cls}" style="left:{gx(v):.2f}%;'
+                         f'top:calc(50% + {dy}px)" data-v="{signed(v, 1)} ± {se:.1f}%" '
+                         f'data-l="{e(team(r["team"]))} · {label}" tabindex="0"></i>')
+        grip.append(f'<div class="gr-row"><span class="nm"><i class="chip" '
+                    f'style="background:{e(colour.get(r["team"], "#8a8a8a"))}"></i>{e(team(r["team"]))}</span>'
+                    f'<div class="gr-plot"><div class="z" style="left:{gx(0):.2f}%"></div>{"".join(marks)}</div></div>')
+    ticks = [t for t in range(int(lo) - 1, int(hi) + 2) if lo <= t <= hi and t % 2 == 0]
+    axis = "".join(f'<span style="left:{gx(t):.2f}%">{"avg" if t == 0 else f"{t:+d}%"}</span>' for t in ticks)
+    slow = min(g["corners"], key=lambda c: c["w"])
+    fast = max(g["corners"], key=lambda c: c["w"])
+    return f"""<section class="ws" id="ws-car" hidden>
+  <div class="ws-grid">
+    <div class="card span2">
+      <div class="card-h"><span>Car model parameters</span>
+        <span class="dim">the simulator's 2026 car with {cm['fuel_kg']:g} kg fuel · lap-time effect of +1% on each,
+          at {e(place(d['session']))}</span></div>
+      <table class="tbl params"><thead><tr><th>Parameter</th><th class="n">Value</th><th>Source</th>
+        <th class="n">+1% →</th><th>faster ← → slower</th></tr></thead><tbody>{''.join(params)}</tbody></table>
+      <div class="badges dim"><span class="badge rules">Rules</span> 2026 regulations ·
+        <span class="badge meas">Measured</span> from this session ·
+        <span class="badge fit">Fitted</span> to this session's corner speeds ·
+        <span class="badge nom">Nominal</span> not fitted yet</div>
+    </div>
+    <div class="card span2">
+      <div class="card-h"><span>Cornering grip by team</span>
+        <span class="dim">against the average car · whiskers ± one standard error</span></div>
+      <div class="gr-legend">
+        <span><i class="gs"></i>Slow corners (Turn {slow['corner']}, {slow['real_kph']:.0f} km/h)</span>
+        <span><i class="gf"></i>Fast corners (Turn {fast['corner']}, {fast['real_kph']:.0f} km/h)</span></div>
+      <div class="gr">{''.join(grip)}
+        <div class="gr-row axis"><span></span><div class="gr-axis">{axis}</div></div></div>
+    </div>
+  </div>
+</section>"""
+
+
+# ---------------- model health ----------------
+
+def _tile(status: str, name: str, value: str, detail: str) -> str:
+    icon = {"ok": "✓", "warn": "!", "bad": "✕"}[status]
+    return (f'<div class="ht {status}"><div class="hh"><i>{icon}</i>{e(name)}</div><div class="hv">{e(value)}</div>'
+            f'<div class="hd">{e(detail)}</div></div>')
+
+
+def health_tiles(d: dict) -> list[str]:
+    checks = {c["name"]: c for c in d["checks"]}
+    gating = [c for c in d["checks"] if c["gating"]]
+    tiles = [_tile("ok" if all(c["passed"] for c in gating) else "bad", "Data checks",
+                   f'{sum(c["passed"] for c in gating)}/{len(gating)}', "Gating checks on the session's timing data")]
+    for name, title, fmt, detail in (
+            ("speed_scale", "Speed channel", "{:.4f}",
+             "Speed from positions ÷ speed channel, on straights (target 1.000 ± 1%)"),
+            ("car_data_rate", "Telemetry rate", "{:.1f} Hz", "Median car-data sample rate")):
+        c = checks.get(name)
+        if c:
+            value = "—" if c.get("value") is None else fmt.format(c["value"])
+            tiles.append(_tile("ok" if c["passed"] else "bad", title, value, detail))
+    b, pb, h, g = d["bench"], d["pace_bench"], d["pace"]["holdout"], d["grip"]
+    tiles.append(_tile("ok" if b["passed"] else "bad", "Grip model bench",
+                       f'{max(abs(r["mech_err"]) for r in b["rows"]):.2f} / '
+                       f'{max(abs(r["downforce_err"]) for r in b["rows"]):.2f}',
+                       f'Largest error on tyre grip / downforce, points (limits {b["tolerance_pct"]["mech"]:g} / '
+                       f'{b["tolerance_pct"]["downforce"]:g})'))
+    tiles.append(_tile("ok" if pb["passed"] else "bad", "Pace model bench", f'{pb["max_error_s"]:.3f} s',
+                       f'Largest sector-gap error on a synthetic race (limit {pb["tolerance_s"]:.2f} s)'))
+    tiles.append(_tile("ok" if h["model_err_s"] < h["baseline_err_s"] else "bad", "Pace model, held-out laps",
+                       f'{h["model_err_s"]:.2f} s',
+                       "Median lap-time error on unseen laps; a car's own median lap gives "
+                       f'{h["baseline_err_s"]:.2f} s'))
+    ca = g.get("clean_air")
+    if ca:
+        fitted = {r["team"]: r for r in g["teams"]}
+        moves = []
+        for r in ca["teams"]:
+            f = fitted[r["team"]]
+            for key in ("slow", "fast"):
+                delta = abs(r[key] - f[f"{key}_corner_pct"])
+                moves.append((delta / max(f[f"{key}_corner_se"], 1e-9), delta, key, team(r["team"])))
+        z, delta, key, who = max(moves)
+        tiles.append(_tile("ok" if z <= 2 else "warn", "Grip in dirty air", f"{z:.1f} SE",
+                           f"Largest change when refitted on laps with no car within {ca['gap_s']:g} s ahead: "
+                           f"{who}, {key} corners, {delta:.1f} points"))
+    tiles.append(_tile("warn", "Lap sim corner fit", f'{g["field"]["rms_kph"]:.0f} km/h',
+                       "RMS miss on corner minimum speeds; the racing line is the main error"))
+    short = sum(x["line_short_m"] for x in g["sections"] if x["line_short_m"] is not None)
+    tiles.append(_tile("warn", "Racing line length", f"−{short:.0f} m",
+                       "Modelled line against the distance the cars drove, per lap"))
+    tiles.append(_tile("warn", "Drag & energy", "not fitted",
+                       "Needs the energy model (S4); straight-line speed is not used"))
+    return tiles
+
+
+def health_workspace(d: dict) -> str:
+    rows = []
+    for c in d["checks"]:
+        kind = "ok" if c["passed"] else ("bad" if c["gating"] else "warn")
+        mark = {"ok": "✓", "bad": "✕", "warn": "!"}[kind]
+        rows.append(f'<tr><td><span class="st {kind}">{mark}</span></td>'
+                    f'<td>{e(DATA_CHECK_NAMES.get(c["name"], c["name"].replace("_", " ")))}</td>'
+                    f'<td class="dim">{e(c["detail"])}</td></tr>')
+    code = d["code"]
+    build = (f'build <a href="{REPO_URL}/commit/{e(code["commit"])}">{e(code["commit"])}</a>'
+             + (" with uncommitted changes" if code["dirty"] else ""))
+    return f"""<section class="ws" id="ws-health" hidden>
+  <div class="ht-grid">{''.join(health_tiles(d))}</div>
+  <div class="card"><div class="card-h"><span>Data checks</span><span class="dim">{build}</span></div>
+    <table class="tbl">{''.join(rows)}</table></div>
+</section>"""
+
+
+# ---------------- pages ----------------
+
+def page(d: dict) -> str:
+    s, c, cars = d["session"], d["conditions"], d["cars"]
+    prefix = "../" * (slug(d).count("/") + 1)
+    rnd = f"R{s['round']} · " if s.get("round") else ""
+    weather = f'{"wet" if c["rain"] else "dry"} · air {c["air_c"]:.0f} °C · track {c["track_c"]:.0f} °C'
+    podium = " · ".join(f'P{p["position"]} {e(cars[p["driver"]]["last"])}' for p in d["podium"])
+    tabs = "".join(f'<button role="tab" data-ws="{k}" aria-selected="{"true" if k == "lap" else "false"}">{name}'
+                   '</button>' for k, name in WORKSPACES)
+    head = _head(f"{s['name']} · {s['session_name']} · parc-ferme",
+                 f"Telemetry and engineering debrief of the {s['year']} {s['name']} ({s['session_name'].lower()}): "
+                 "every car's laps against distance, race pace by sector, the car model and its checks.",
+                 prefix, plots=True)
+    return f"""{head}<body>
+<header class="top">
+  <a class="logo" href="{prefix}"><i></i>Parc fermé</a>
+  <div class="sess"><b>{rnd}{e(place(s))} · {e(s['session_name'])}</b>
+    <span>{e(date_text(s['date']))} · {s['laps']} laps · {weather} · {podium}</span></div>
+  <nav class="ws-tabs" role="tablist">{tabs}</nav>
+</header>
 <main>
-<section class="hero">
-<div class="eyebrow">{e(s['session_name'])} debrief · {rnd}{e(date_text(s['date']))}</div>
-<h1>{e(s['name'])}</h1>
-<p class="meta">{e(s['circuit'])} · {s['laps']} laps · {e(weather)}</p>
-<ol class="podium" aria-label="Result">{podium}</ol>
-</section>
-
-<section id="summary"><div class="sec-head"><div class="eyebrow">Summary</div><h2>Three findings</h2></div>
-<ol class="findings">{findings}</ol></section>
-
-<section id="car"><div class="sec-head"><div class="eyebrow">Car performance</div><h2>Pace and grip</h2></div>
-{track_map(d)}
-<div class="two">
-<div style="display:flex;flex-direction:column;gap:12px">
-<p>Every green lap counts: no pit laps, no safety cars, nothing slower than 107% of the car's own median. Laps are
-compared after taking out what isn't the car: tyre compound and age, fuel burn over the race, and traffic.</p>
-<p>Pace is shown car by car, because two drivers of one team can have very different races. Grip is shown team by
-team, from both cars, because it is a property of the car.</p>
-</div>
-<div class="callout"><p><b>Not measured yet: drag.</b> In 2026 how fast a car accelerates on a straight depends on
-how much battery energy it deploys there, which the public data doesn't show. Drag will be fitted together with the
-energy model.</p></div>
-</div>
-
-<h3 id="pace" style="scroll-margin-top:16px">Race pace by sector</h3>
-{pace_table(d)}
-
-<h3 id="grip" style="scroll-margin-top:16px">Grip in slow and fast corners</h3>
-<p>From the lowest speed of every green lap through each corner the drivers lift for ({len(g['corners'])} of
-{len(d['track']['corners'])}). Every car takes nearly the same radius through a corner, so comparing a team with
-the field at the same corner cancels the radius out; the timing data doesn't show where a car is across the
-track.</p>
-{dot_plot(d)}
-<p class="note">The gap between slow and fast corners is where downforce shows. Splitting each team's grip into tyre
-grip and downforce needs more circuits than one: here the split is uncertain by
-{min(r['downforce_se'] for r in g['teams']):.0f}–{max(r['downforce_se'] for r in g['teams']):.0f}% per team, and
-only the largest differences stand out. Both are in the table.</p>
-</section>
-
-{checks_section(d)}
+{lap_workspace(d)}
+{pace_workspace(d)}
+{car_workspace(d)}
+{health_workspace(d)}
 </main>
-<footer><div class="in"><p>{SOURCES} Code, models and test benches: <a href="{REPO_URL}">parc-ferme on
-GitHub</a>, MIT licence.</p><p>{DISCLAIMER}</p></div></footer>
-<script>{SCRIPT}</script>
+{_footer(d["code"])}
+<div class="tip" id="tip" hidden></div>
+<script id="data" type="application/json">{page_data(d)}</script>
+<script src="{_asset('dash.js', prefix)}"></script>
 </body></html>
 """
 
 
 def index(debriefs: list[dict]) -> str:
-    items = []
-    for d in sorted(debriefs, key=lambda x: x["session"]["date"], reverse=True):
+    rows = []
+    for d in sorted(debriefs, key=lambda x: (x["session"]["date"], x["session"]["key"]), reverse=True):
         s = d["session"]
-        rnd = f"Round {s['round']} · " if s.get("round") else ""
-        items.append(f'<li><a href="{e(slug(d))}/"><span class="t">{e(s["name"])} · {e(s["session_name"])}</span>'
-                     f'<span class="m">{rnd}{e(date_text(s["date"]))} · {e(s["circuit"])}</span></a></li>')
-    year = debriefs[0]["session"]["year"] if debriefs else ""
-    return f"""<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>parc-ferme · {year} debriefs</title>
-<meta name="description" content="Post-session engineering debriefs for {year} Formula 1, from public timing data.">
-<style>{CSS}</style></head>
-<body>
-<header class="top"><div class="in"><a class="brand" href="./">parc-ferme</a></div></header>
+        first = next((p for p in d["podium"] if p["position"] == 1), None)
+        rows.append(f'<tr><td class="n">{s["round"] or "—"}</td><td><a href="{e(slug(d))}/">{e(place(s))}</a></td>'
+                    f'<td>{e(s["session_name"])}</td><td class="n">{e(date_text(s["date"]))}</td>'
+                    f'<td class="opt">{e(s["circuit"])}</td>'
+                    f'<td>{e(d["cars"][first["driver"]]["last"]) if first else "—"}</td>'
+                    f'<td class="n opt">{s["laps"]}</td></tr>')
+    seasons = " · ".join(str(y) for y in sorted({d["session"]["year"] for d in debriefs}, reverse=True))
+    latest = max((d["session"]["date"] for d in debriefs), default=None)
+    count = f'{len(debriefs)} session{"" if len(debriefs) == 1 else "s"}'
+    head = _head(f"parc-ferme · {seasons} sessions".replace("  ", " "),
+                 "Telemetry and engineering debriefs for 2026 Formula 1 sessions, from public timing data.", "")
+    return f"""{head}<body>
+<header class="top">
+  <a class="logo" href="./"><i></i>Parc fermé</a>
+  <div class="sess"><b>{seasons} season</b>
+    <span>{count}{f" · latest {e(date_text(latest))}" if latest else ""}</span></div>
+</header>
 <main>
-<section class="hero"><div class="eyebrow">{year} season</div><h1>Engineering debriefs</h1>
-<p class="meta">After each session: where every car gained and lost time, and why, worked out from public timing
-data by physics models that are checked against what the cars actually did.</p></section>
-<section><ol class="sessions">{''.join(items)}</ol></section>
+<p class="idx-note">After each session: every car's laps against distance, race pace by sector with tyres, fuel
+and traffic taken out, and the 2026 car model behind it, each model checked against what the cars did.</p>
+<table class="tbl sessions"><thead><tr><th class="n">Rd</th><th>Grand Prix</th><th>Session</th><th class="n">Date</th>
+<th class="opt">Circuit</th><th>P1</th><th class="n opt">Laps</th></tr></thead>
+<tbody>{''.join(rows)}</tbody></table>
 </main>
-<footer><div class="in"><p>{SOURCES} Code, models and test benches: <a href="{REPO_URL}">parc-ferme on
-GitHub</a>, MIT licence.</p><p>{DISCLAIMER}</p></div></footer>
+{_footer()}
 </body></html>
 """
 
 
+def _clear(out: Path) -> None:
+    """Empty a previous build out of `out`, refusing a directory that isn't one."""
+    if not out.exists():
+        return
+    entries = list(out.iterdir())
+    if entries and not ((out / "index.html").exists() or (out / ".nojekyll").exists()):
+        raise RuntimeError(f"{out} doesn't look like a site build, so it isn't cleared")
+    for p in entries:
+        if p.is_dir() and not p.is_symlink():
+            shutil.rmtree(p)
+        else:
+            p.unlink()
+
+
 def write(out: Path, debriefs: list[dict]) -> list[Path]:
-    """Write the index and one page per debrief under `out`. Returns the pages written."""
-    out.mkdir(parents=True, exist_ok=True)
+    """Build the site into `out`, replacing the previous build: the index, one page per session with its debrief
+    document beside it, and the shared stylesheet and script. Returns the pages written."""
+    _clear(out)
+    (out / "assets").mkdir(parents=True)
+    for name in ASSETS:
+        shutil.copyfile(STATIC / name, out / "assets" / name)
     written = []
     for d in debriefs:
         path = out / slug(d) / "index.html"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(page(d))
-        (path.parent / "debrief.json").write_text(json.dumps(d, indent=1, default=float))
+        (path.parent / "debrief.json").write_text(to_json(d))
         written.append(path)
     (out / "index.html").write_text(index(debriefs))
     (out / ".nojekyll").write_text("")

@@ -1,4 +1,5 @@
 import json
+import re
 from html.parser import HTMLParser
 
 import numpy as np
@@ -7,7 +8,9 @@ import pytest
 
 from parc_ferme.bench import grip as grip_bench
 from parc_ferme.bench import pace as pace_bench
-from parc_ferme.debrief import summary
+from parc_ferme.core.car import Car
+from parc_ferme.debrief import channels, summary
+from parc_ferme.debrief.build import SCHEMA, to_json
 from parc_ferme.models import grip, pace
 from parc_ferme.site import render
 
@@ -17,8 +20,9 @@ def _records(df):
 
 
 @pytest.fixture(scope="module")
-def debrief():
-    """A complete debrief document built from the two test benches, in the shape debrief.build writes."""
+def debrief(bench_session):
+    """A complete debrief document built from the test benches and the synthetic session, in the shape
+    debrief.build writes and the site reads back."""
     p = pace.sector_pace(pace_bench.race(), n_boot=20)
     b = grip_bench.run()
     v_ref = b.minima.groupby("corner").v.median()
@@ -35,20 +39,22 @@ def debrief():
              "lines": [{"line": "start", "x": 600.0, "y": 0.0, "nx": 1.0, "ny": 0.0},
                        {"line": "S1/S2", "x": -300.0, "y": 260.0, "nx": -0.5, "ny": 0.87},
                        {"line": "S2/S3", "x": -300.0, "y": -260.0, "nx": -0.5, "ny": -0.87}]}
-    team_names = {t: f"Team {t}" for t in grip_bench.TEAMS}
-    rel = rel.assign(team=rel.team.map(team_names))
-    return {
-        "schema": 1,
+    rel = rel.assign(team=rel.team.map(lambda t: f"Team {t}"))
+    sectors = [{"sector": 1, "from": 0.0, "to": 0.3, "corners": [1]},
+               {"sector": 2, "from": 0.3, "to": 0.7, "corners": [2, 3]},
+               {"sector": 3, "from": 0.7, "to": 1.0, "corners": [4]}]
+    s = bench_session
+    field = Car(fuel_kg=channels.SIM_FUEL_KG, mu=1.48, cla_corner=3.6, rho=1.15)
+    d = {
+        "schema": SCHEMA,
         "session": {"key": 1, "year": 2026, "round": 3, "name": "Test Grand Prix", "session_name": "Race",
                     "circuit": "Test Circuit", "date": "2026-03-01", "laps": 60},
         "conditions": {"air_c": 21.0, "track_c": 35.0, "humidity_pct": 40.0, "pressure_hpa": 1012.0,
                        "rain": False, "air_density": 1.19},
         "podium": [{"position": 1, "driver": "AAA", "team": "Team AAA", "grid": 2}],
-        "cars": {c: {"name": f"Driver {c}", "last": c.title(), "team": f"Team {c}", "number": k}
-                 for k, c in enumerate(pace_bench.CARS, start=1)},
-        "sectors": [{"sector": 1, "from": 0.0, "to": 0.3, "corners": [1]},
-                    {"sector": 2, "from": 0.3, "to": 0.7, "corners": [2, 3]},
-                    {"sector": 3, "from": 0.7, "to": 1.0, "corners": [4]}],
+        "cars": {c: {"name": f"Driver {c}", "last": c.title(), "team": f"Team {c}", "number": k,
+                     "colour": "#e8002d"} for k, c in enumerate(pace_bench.CARS, start=1)},
+        "sectors": sectors,
         "pace": {"reference": p.reference, "cars": _records(p.cars), "traffic": _records(p.traffic),
                  "holdout": p.holdout, "excluded": [], "min_laps": pace.MIN_LAPS},
         "grip": {"teams": _records(rel), "w_slow": rel.attrs["w_slow"], "w_fast": rel.attrs["w_fast"],
@@ -58,16 +64,23 @@ def debrief():
                                "teams": [{"team": r["team"], "slow": r["slow_corner_pct"] + 0.2,
                                           "fast": r["fast_corner_pct"] - 0.1} for r in _records(rel)]},
                  "sections": [{"from_m": 0.0, "to_m": 500.0, "driven_m": 510.0, "line_m": 500.0,
-                               "line_short_m": 10.0}]},
+                               "line_short_m": 10.0},
+                              {"from_m": 500.0, "to_m": 900.0, "driven_m": None, "line_m": 400.0,
+                               "line_short_m": float("nan")}]},
         "track": track,
+        "telemetry": channels.telemetry(s.car_data, s.laps, s.model, sectors, _records(rel), field, s.track.length),
+        "car_model": channels.parameter_effects(s.model.line, s.model.zones, field),
         "bench": {"rows": _records(grip_bench.recovery(b)), "tolerance_pct": grip_bench.TOLERANCE_PCT,
                   "passed": True},
         "pace_bench": {"cars": 6, "laps": 60, "max_error_s": 0.03, "tolerance_s": 0.06, "passed": True},
-        "checks": [{"name": "speed_scale", "passed": True, "gating": True, "detail": "median 1.0004"},
-                   {"name": "centreline_matches_layout", "passed": False, "gating": False, "detail": "67%"}],
+        "checks": [{"name": "speed_scale", "passed": True, "gating": True, "detail": "median 1.0004",
+                    "value": 1.0004},
+                   {"name": "centreline_matches_layout", "passed": False, "gating": False, "detail": "67%",
+                    "value": None}],
         "code": {"commit": "abc1234", "dirty": False},
         "generated_utc": "2026-03-01 18:00",
     }
+    return json.loads(to_json(d))  # as the site reads it back from disk
 
 
 class _Checker(HTMLParser):
@@ -98,6 +111,10 @@ class _Checker(HTMLParser):
         self.text.append(data)
 
 
+def _embedded(html: str) -> dict:
+    return json.loads(re.search(r'<script id="data" type="application/json">(.*?)</script>', html, re.S).group(1))
+
+
 def test_summary_states_only_what_the_uncertainty_supports(debrief):
     texts = [f["text"] for f in summary.findings(debrief)]
     assert len(texts) == 3
@@ -115,26 +132,66 @@ def test_leading_group_keeps_teams_the_uncertainty_cannot_separate():
     assert [r["team"] for r in summary.leading_group(rows, "fast_corner_pct", lowest=True)] == ["C"]
 
 
-def test_page_is_well_formed_and_carries_every_section(debrief):
-    html = render.page(debrief)
+def test_document_json_is_strict(debrief):
+    assert to_json({"a": float("nan"), "b": [np.float64(1.5), np.int64(2)], "c": np.bool_(True)}) == \
+        '{"a":null,"b":[1.5,2],"c":true}'
+    json.loads(to_json(debrief), parse_constant=lambda c: pytest.fail(f"{c} in the document"))
+
+
+def test_page_is_well_formed_and_carries_every_workspace(debrief):
     checker = _Checker()
-    checker.feed(html)
+    checker.feed(render.page(debrief))
     assert not checker.errors, checker.errors[:3]
+    assert checker.stack == []
     text = " ".join(checker.text)
-    for heading in ("Three findings", "Race pace by sector", "Grip in slow and fast corners", "Checks"):
-        assert heading in text
-    assert "Pace · test bench" in text and "Grip · test bench" in text
+    for label in ("Lap analysis", "Race pace", "Car model", "Model health", "Cost of following, per lap",
+                  "Car model parameters", "Cornering grip by team", "Data checks"):
+        assert label in text
+    for tile in ("Speed channel", "Grip model bench", "Pace model bench", "Grip in dirty air", "Racing line length"):
+        assert tile in text
+    assert "1.0004" in text and "−10 m" in text
     assert "not associated in any way with the Formula 1 companies" in text
 
 
-def test_names_from_the_feed_are_escaped(debrief):
+def test_page_embeds_what_its_script_draws(debrief):
+    html = render.page(debrief)
+    data = _embedded(html)
+    assert set(data) == {"L", "dx", "n", "sectors", "corners", "zones", "map", "cars", "best", "sims", "adjusted"}
+    assert re.findall(r'<option value="([^"]+)">', html) == list(data["cars"]) * 2
+    for car in data["cars"].values():
+        assert car["colour"].startswith("#") and car["team"] and car["last"]
+        for lap in ("fastest", "typical"):
+            assert {len(a) for a in car[lap]["ch"].values()} == {data["n"]}
+    for sim in data["sims"].values():
+        assert {len(a) for a in sim["ch"].values()} == {data["n"]}
+    assert data["adjusted"][debrief["pace"]["reference"]][0] == 0
+
+
+def test_names_from_the_feed_cannot_break_out_of_the_page(debrief):
     hostile = json.loads(json.dumps(debrief))
-    hostile["cars"][hostile["pace"]["reference"]]["last"] = "<script>x</script>"
-    assert "<script>x</script>" not in render.page(hostile)
+    code = next(iter(hostile["telemetry"]["laps"]))
+    hostile["cars"][code]["last"] = "</script><script>alert(1)</script>"
+    html = render.page(hostile)
+    assert "<script>alert(1)" not in html
+    assert _embedded(html)["cars"][code]["last"] == "</script><script>alert(1)</script>"
 
 
-def test_site_writes_an_index_and_one_page_per_session(tmp_path, debrief):
+def test_site_build_replaces_the_last_one(tmp_path, debrief):
+    stale = tmp_path / "prototype" / "index.html"
+    stale.parent.mkdir()
+    stale.write_text("old")
+    (tmp_path / "index.html").write_text("old index")
     pages = render.write(tmp_path, [debrief])
     assert pages == [tmp_path / "2026" / "03-test-grand-prix-race" / "index.html"]
-    assert "Test Grand Prix" in (tmp_path / "index.html").read_text()
+    assert not stale.exists()
+    for ref in re.findall(r'(?:href|src)="(\.\./[^"?]*)', pages[0].read_text()):
+        assert (pages[0].parent / ref).resolve().exists(), ref
+    assert 'href="2026/03-test-grand-prix-race/"' in (tmp_path / "index.html").read_text()
     assert json.loads((pages[0].parent / "debrief.json").read_text())["session"]["name"] == "Test Grand Prix"
+
+
+def test_site_build_leaves_a_directory_that_is_not_a_site_alone(tmp_path, debrief):
+    (tmp_path / "notes.txt").write_text("keep")
+    with pytest.raises(RuntimeError, match="doesn't look like a site build"):
+        render.write(tmp_path, [debrief])
+    assert (tmp_path / "notes.txt").read_text() == "keep"
