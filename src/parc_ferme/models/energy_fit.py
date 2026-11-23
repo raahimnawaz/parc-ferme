@@ -9,6 +9,7 @@ import pandas as pd
 from scipy.spatial import cKDTree
 
 from ..core.car import G
+from .energy import held_out
 
 # Sensitivity assumptions for window-mean wheel work: ICE map, fuel mass, shifts and
 # endpoint error in kW, and fractional aero-work difference from still air (wind / tow).
@@ -16,7 +17,7 @@ WHEEL_ALLOWANCE_KW = 50.
 AERO_FRACTION = 0.15
 
 
-def profile(rows, car, battery_laps=None):
+def profile(rows, car, battery_laps=None, linked=False):
     """Robust identification range and typical signed shaft kW (time weighted in sampled windows)."""
     eta = car.driveline_eff
     ice, limit = car.ice_w / 1000, car.mguk_w / 1000
@@ -32,8 +33,8 @@ def profile(rows, car, battery_laps=None):
     if battery_laps is not None:
         from .battery import drag_range, zone_power_ranges
 
-        low, high = drag_range([battery_laps[lap] for lap in rows.lap.unique()], low, high, car)
-        power_ranges = zone_power_ranges(battery_laps, low, high, car)
+        low, high = drag_range(battery_laps, low, high, car, linked)
+        power_ranges = zone_power_ranges(battery_laps, low, high, car, linked)
     cda = (low + high) / 2
     latent = rows.copy()
     latent["electric_kw"] = ((b + a*cda) / eta - ice).clip(-limit, rows.cap_kw)
@@ -111,19 +112,20 @@ def rollouts(train, held, cda, car):
     return frame.groupby("run").tail(1).drop(columns="run")
 
 
-def evaluate(rows, scales, car, battery_laps=None):
+def evaluate(rows, scales, car, battery_laps=None, linked=False):
     """Same race-lap holdout for every driver. No held-out speeds used in fit, map or baseline."""
     params, predictions, runs, skipped = [], [], [], {}
     full = rows[rows.phase == "full throttle"]
     for driver, group in full.groupby("driver"):
-        train = group[group.lap % 5 != 0]
-        test = group[group.lap % 5 == 0]
+        train = group[~held_out(group.lap)]
+        test = group[held_out(group.lap)]
         if train.lap.nunique() < 5:
             skipped[driver] = "fewer than five training laps"
             continue
         try:
-            laps = None if battery_laps is None else {lap: battery_laps[driver, lap] for lap in train.lap.unique()}
-            cda, latent, quantities = profile(train, car, laps)
+            laps = None if battery_laps is None else {lap: parts for (drv, lap), parts in battery_laps.items()
+                                                      if drv == driver and not held_out(lap)}
+            cda, latent, quantities = profile(train, car, laps, linked)
         except ValueError as err:
             skipped[driver] = str(err)
             continue

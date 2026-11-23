@@ -29,7 +29,7 @@ as OpenF1-shaped telemetry and run through the same code as real laps.
 |---|---|
 | Track geometry | The 2026 layout from the timing feed: every car's green-lap positions (1,052 laps) averaged by lap fraction, with elevation (30 m range). The TUMFTM centreline is the pre-2021 layout at Turn 10 and the final sector, so it supplies track width only where it matches (67% of the lap). |
 | Racing line | Minimum lap time, not minimum curvature. The offset from the reference is searched against the lap sim's own lap time, coarse to fine, from the minimum-curvature line. The gain is 2.0 s (2.6%) for the same car, concentrated at Turn 9 onto the back straight and the Turn 1–2 sequence. |
-| Car | 2026 rules from `core/rules_2026.toml` (768 kg, 400 kW ICE, 350 kW MGU-K with its taper above 290 km/h, 8.5 MJ harvest per lap), straight mode only in the FIA zones, road grade, air density from the session's weather. Grip and corner downforce are fitted in S3; drag waits for S4. |
+| Car | 2026 rules from `core/rules_2026.toml` (768 kg, 400 kW ICE, 350 kW MGU-K with its taper above 290 km/h, 8.5 MJ harvest per lap), straight mode only in the FIA zones, road grade, air density from the session's weather. S3 fits grip and corner downforce. S4 bounds effective drag jointly with deployment. |
 | Lap sim | Quasi-steady point mass, compiled with Numba (0.3 ms per lap). The MGU-K deploys below a threshold speed chosen so the lap spends exactly what it harvests. |
 
 Against Hamilton's fastest race lap (lap 44, 80.122 s) the nominal car runs 74.17 s with a speed-trace correlation
@@ -107,7 +107,7 @@ the code version.
 | Lap analysis | Any two cars' fastest or typical laps against distance: speed, time gap, throttle, brake, gear and engine speed, under a strip of sectors, corners and straight-mode zones. A track map coloured by who was faster in each of 25 mini-sectors, the lap summary in timing-screen colours, and a reference cursor that measures any stretch. The lap sim's car for car A's team can be overlaid, with its energy channels. |
 | Race pace | Time lost per lap to the fastest car, sector by sector, and the cost of running in traffic. |
 | Car model | The sim car's parameters, where each comes from (rules, measured, fitted or nominal) and the lap-time effect of +1% on each; cornering grip by team. |
-| Model health | The data checks, both test benches and the known gaps, as status tiles, and the identifiability table: for each reported quantity, how often the bench's 95% intervals held the truth, and whether this session resolves it. |
+| Model health | Data checks and interval coverage for grip and race pace. The Energy and drag card compares independent and linked laps, with bench coverage and exit-speed error on held-out blocks. |
 
 Distance is corrected distance, as MoTeC and ATLAS build it: speed integrated over the lap and scaled to the lap
 length, so every car's laps line up corner for corner (the speed channel is right to 0.1%, while the position feed's
@@ -148,8 +148,8 @@ uv venv --python 3.12 && uv pip install -e ".[dev]"
 .venv/bin/parc-ferme sim 11307        # nominal 2026 car on the minimum-time line vs Hamilton's best lap
 .venv/bin/parc-ferme grip 11307       # S3: grip per team, the fitted field car, driven distance per section
 .venv/bin/parc-ferme energy 11307     # S4 diagnostic: conditional wheel power over straight-line windows
-.venv/bin/parc-ferme energy 11307 --fit  # full-lap battery balance, paired intervals and held-out speeds
-.venv/bin/parc-ferme bench --energy-only # calibrate and audit both S4 fits on the same blind cars
+.venv/bin/parc-ferme energy 11307 --fit  # linked battery histories, paired intervals and block-held-out speeds
+.venv/bin/parc-ferme bench --energy-only # calibrate and audit the S4 fits on the same blind cars
 .venv/bin/parc-ferme bench            # full S4, grip and race-pace interval studies
 .venv/bin/parc-ferme debrief 11307    # the session's workstation, built into _site/ (refused if a gating check fails)
 .venv/bin/parc-ferme site             # rebuild _site/ from every debrief already built

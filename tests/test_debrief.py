@@ -195,3 +195,15 @@ def test_site_build_leaves_a_directory_that_is_not_a_site_alone(tmp_path, debrie
     with pytest.raises(RuntimeError, match="doesn't look like a site build"):
         render.write(tmp_path, [debrief])
     assert (tmp_path / "notes.txt").read_text() == "keep"
+
+
+def test_energy_card_displays_paired_full_widths_and_checked_speeds():
+    width = dict(per_lap_median=.532, linked_median=.501, narrower=1, pairs=21)
+    covered = dict(covered_cars=287, cars=300)
+    fit = dict(audit_passed=True, interval_comparison=dict(drag_m2=width, deployment_kw=width),
+               bench=dict(drag_m2=covered, deployment_kw=covered), linked_boundaries=10,
+               feasible_chains=2, chains=2, scored_windows=20, split="Held-out blocks",
+               window_scores=dict(joint=dict(mae_kph=2.), local_speed_gain=dict(mae_kph=2.1)))
+    html = render.energy_card(dict(energy_fit=fit))
+    assert all(value in html for value in ("0.532 m²", "0.501 m²", "1/21", "287/300", "2.00 km/h", "2.10 km/h"))
+    assert render.energy_card({}) == "" and render.energy_card(dict(energy_fit=fit | {"audit_passed": False})) == ""

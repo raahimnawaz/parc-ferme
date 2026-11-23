@@ -72,3 +72,29 @@ def test_drag_endpoint_rejected_by_long_unbroken_deployment():
     parts = np.array([[20., bat.STRAIGHT, 470., 250., 350., 350., 1.]])
     low, high = bat.drag_range([parts], .1, 1.5, Car())
     assert low == .1 and .5 < high < 1.5
+
+
+def test_charge_continuity_excludes_unsustainable_drag_and_breaks_at_missing_laps():
+    # Each lap forces > 2 MJ deployment at high drag: two isolated laps are feasible.
+    parts = np.array([[12., bat.STRAIGHT, 450., 220., 350., 350., 1.]])
+    car = Car()
+    consecutive = {1: parts, 2: parts, 3: parts}
+    separate = {1: parts, 3: parts, 5: parts}
+    low, high = .1, 1.2
+    assert bat.drag_range(consecutive, low, high, car) == (low, high)
+    assert bat.drag_range(separate, low, high, car, linked=True) == (low, high)
+    assert bat.drag_range(consecutive, low, high, car, linked=True)[1] < high
+    linked = bat.linked_ledger(consecutive, low, car)
+    assert all(r["feasible"] for r in linked)
+    assert linked[0]["end_mj"] == linked[1]["start_mj"]
+    linked_power = bat.zone_power_ranges(consecutive, low, high, car, linked=True)
+    assert linked_power[1][1] <= 4000/36 + 1e-9
+
+
+def test_recovery_cap_resets_without_resetting_charge():
+    # 2 MJ recovered on each lap, with a 2 MJ per-lap cap. Splitting 3+1 is illegal.
+    ends = np.array([2, 4])
+    work = np.array([-2., 2., -2., 2.])
+    assert bat.block_path(work, work, 1., 4., 2., ends) is not None
+    work = np.array([-3., 3., -1., 1.])
+    assert bat.block_path(work, work, 1., 4., 2., ends) is None

@@ -207,9 +207,9 @@ windows. The battery balance constrains those windows using the rest of the lap.
 The ledger covers the timing line to the timing line. At each segment the store gains
 85% of harvested shaft work or spends deployed shaft work (unit discharge efficiency).
 Charge stays within the configured 4 MJ window and recovered energy within the configured
-8.5 MJ per lap. Both are model inputs from the project's rules file. Start and end charges
-are free for each lap. This permits a net change on a racing lap and leaves cross-lap
-continuity as a separate constraint to investigate.
+8.5 MJ per lap. Both are model inputs from the project's rules file. The independent-lap control has free start and end charges on every lap. The linked fit has
+free endpoints only at the ends of a consecutive sequence. Inside it, the end charge of
+one lap is the start charge of the next. The recovery budget resets at every timing line.
 
 The signed work balance admits harvesting at full throttle. At a lift with both pedals
 off, or during braking, the available kinetic and elevation loss bounds recovery. The
@@ -226,7 +226,7 @@ different points within that drag range makes these outer bounds conservative.
 Separate optimisations at the representative CdA give upper limits on recovery in each
 phase. These limits can correspond to different trajectories.
 
-On Hamilton's lap 44 (80.122 s), the upper limits at the representative CdA were **1.09 MJ**
+In the original independent-lap study at `bf8c778`, on Hamilton's lap 44 (80.122 s), the upper limits at the representative CdA were **1.09 MJ**
 during the measured full-throttle straight windows, **0.45 MJ** during 2.12 s of lift-and-coast,
 and **3.53 MJ** under braking. These are store-side model limits. The public feed does
 not measure how Hamilton divided recovery between those phases.
@@ -234,7 +234,7 @@ not measure how Hamilton divided recovery between those phases.
 `parc-ferme bench --energy-only` calibrates the intervals from 160 independent simulated
 cars with hidden strategies (clipping, early taper, full-throttle harvest or partial
 deployment). Each drives 8–45 synthetic laps with a hidden store carried through four
-successive straights, lifts, braking zones and exits. The generator clips its policy
+successive straights, lifts, braking zones and exits and across the timing line into the next lap. The generator clips its policy
 at an empty or full store and at the recovery cap. Combustion power,
 fuel burn, wind, tow, shifts, lift points and deployment vary. The estimator sees sampled,
 rounded speeds with timing jitter and dropouts. Scoring uses the true shaft work over
@@ -243,44 +243,50 @@ by the largest finite-sample 95% calibration quantile across the four strategies
 deployment the calibration score is the worst of the car's four zone errors.
 
 A disjoint 300-car audit includes 60 cars that switch strategy between straights and laps.
-Both fits covered drag on **297/300** cars and all four deployment zones on **297/300** cars.
-Each fit uses its own calibration on the same cars. For the battery fit, the median audit
-interval widths were 0.73 m² and 308 kW. The representative values still underestimate
-both quantities (mean signed normalised errors of −1.19 and −1.08). The per-strategy
-results and source fingerprint are in `src/parc_ferme/bench/energy_coverage.json`.
+The independent and linked fits each covered drag on **287/300** cars (95.7%) and all
+four deployment zones on **293/300** cars (97.7%). Each has its own calibration on the
+same cars. The truth for zone power is evaluated only over the windows used for the fit.
+Per-strategy coverage, interval widths and signed errors are in
+`src/parc_ferme/bench/energy_coverage.json`.
 
-At Barcelona the fit uses 845 car-laps. Every fifth race lap is held out for all cars,
-including when constructing the reference geometry. The local deployment map uses
-training windows from the same driver and zone, matched in entry position and speed.
-Starting from the measured entry speed, it integrates speed forward for the observed
-full-throttle duration. The baseline uses the same neighbours' observed speed gains
-per second. During multi-window runs both models propagate position and speed until
-the end of the uninterrupted stretch.
+### Linked-lap test at Barcelona
 
-| Held-out Barcelona check | Joint fit MAE | Local speed-gain MAE |
-| --- | ---: | ---: |
-| 1,838 window endpoints across 204 car-laps and 21 cars | 2.02 km/h | 2.09 km/h |
-| 566 runs of at least two consecutive windows, median 3.36 s | 3.54 km/h | 3.70 km/h |
+Laps **7–9, 22–24, 37–39 and 52–54** were reserved for every car before fitting the
+reference geometry, drag or deployment. A driver’s training sequence breaks at a missing
+lap, a non-green lap (including pit-in and pit-out) or a held-out block. Within a
+sequence the solver enforces the 4 MJ store continuously and the 8.5 MJ recovery cap
+separately on each lap. A sequence counts as feasible only if every lap admits the same
+trajectory; the drag fit requires feasible sequences covering at least 95% of the
+training laps. The known-answer test includes three laps whose upper drag endpoint
+would exhaust the store despite being feasible on each isolated lap.
 
-Fixing CdA at the S2 nominal 0.80 m² and refitting deployment gives **2.08 km/h** on the
-same 1,838 endpoints. Stroll had fewer than five eligible training laps. All 845 training laps admitted a feasible store history at their driver's representative drag.
+21 cars supplied 839 training car-laps. All 143 sequences admitted a feasible trajectory
+at their car’s representative drag, across **696 timing-line crossings**, with up to 12
+laps in one sequence. Stroll had fewer than five training laps.
 
-| Barcelona 95% interval width (median) | Straight windows only | With full-lap balance | Intervals narrowed |
+| Median calibrated 95% interval width | Independent laps | Linked laps | Intervals narrowed |
 | --- | ---: | ---: | ---: |
-| Effective drag area | 0.574 m² | 0.574 m² | 0/21 |
-| Zone-average signed electric power | 223.4 kW | 223.4 kW | 0/84 |
+| Effective drag area | 0.532 m² | 0.532 m² | 0/21 |
+| Zone-average signed electric power | 229.0 kW | 229.0 kW | 0/84 |
 
-The uncalibrated ranges also stayed equal to numerical precision. The previous bench
-(at `93f725f`) gave 0.624 m² and 229 kW. Recalibrating the straight-window fit on the new
-synthetic laps accounts for that change. Unknown charge at both ends and freedom to harvest
-in several phases leave the window extremes feasible. A drag ranking or deployment map
-would require tighter independent evidence about the car's power or charge.
+All drag intervals share an overlap. In 77 of 84 driver-zone intervals, both harvest and
+deployment remain plausible. Raw widths also agreed to numerical precision. Compare the
+two columns on this split: the earlier individual-lap holdout at `bf8c778` used a different
+training sample and calibration.
 
-Artifacts in `reports/11307/` include the conditional ranges and simulation-calibrated
-95% intervals in `energy_intervals.csv`, all scored endpoints in `energy_heldout.csv`,
-uninterrupted runs in `energy_rollouts.csv` and the split, exclusions, baseline errors,
-bias, RMSE and 90th-percentile absolute errors in `energy_fit.json`.
-The matched fits are in `energy_paired_intervals.csv`. Each training lap's feasible
-minimum-harvest trajectory is summarised in `energy_lap_balance.csv`, including start,
-end and extreme charge, deployed and recovered work, its phase breakdown and separate
-phase recovery ceilings. All these quantities are conditional on the representative CdA.
+| Held-out exit-speed check | Linked fit MAE | Local speed-gain MAE |
+| --- | ---: | ---: |
+| 1,928 window endpoints across 210 car-laps | 1.97 km/h | 2.05 km/h |
+| 588 uninterrupted runs of two or more windows | 3.16 km/h | 3.37 km/h |
+
+The independent-lap model also scored 1.97 km/h on the same endpoints. The prediction
+starts from measured speed at entry and uses the observed full-throttle duration. The
+speed test holds out blocks of laps; its prediction horizon is the straight-line window
+or uninterrupted run.
+
+Model health shows median 95% widths, the number narrowed, blind coverage and held-out
+speed error. `parc-ferme energy 11307 --fit` writes the matched intervals, held-out
+endpoints and rollouts to `reports/11307/`. In `energy_linked_balance.csv`, each row
+records the sequence, start and end charge, and recovered and spent energy for **one
+feasible history**. `energy_lap_balance.csv` retains the independent-lap phase limits at
+the representative drag. The fit, split and exclusions are in `energy_fit.json`.

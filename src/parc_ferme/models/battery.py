@@ -123,13 +123,62 @@ def constants(car):
             WHEEL_ALLOWANCE_KW, AERO_FRACTION)
 
 
-def drag_range(laps, low, high, car):
+def blocks(laps, linked):
+    """A free initial charge at each break in the observed training lap numbers."""
+    ids = np.array(sorted(laps), int)
+    groups = np.split(ids, np.flatnonzero(np.diff(ids) != 1)+1) if linked else ids[:, None]
+    for group in groups:
+        parts = [laps[number] for number in group]
+        ends = np.cumsum([len(part) for part in parts])
+        yield group, np.concatenate(parts), ends
+
+
+def block_path(low, high, regen, capacity, budget, ends):
+    """One continuous store, independent recovery budget at each timing-line crossing."""
+    recovered, soc = path(low, high, regen, capacity)
+    if recovered < 0:
+        return None
+    change = np.diff(soc)
+    harvest = np.maximum(change, 0)
+    starts = np.r_[0, ends[:-1]]
+    if np.all(np.add.reduceat(harvest, starts) <= budget+1e-9):
+        return soc, np.maximum(-change, 0), harvest
+    # A refill on an earlier lap may make a greedy path's over-budget lap feasible.
+    return flow_optimum(low, high, np.zeros(len(low)), np.full(len(low), regen),
+                        regen, capacity, budget, ends=ends, flows=True)
+
+
+def linked_ledger(laps, cda, car):
+    ice, eta, regen, capacity, allowance, frac = constants(car)
+    budget = car.rules["power_unit"]["harvest_per_lap_mj"]
+    records = []
+    for ids, parts, ends in blocks(laps, True):
+        low, high = shaft_bounds(parts, cda, cda, ice, eta, allowance, frac)
+        witness = block_path(low, high, regen, capacity, budget, ends)
+        for lap, start, end in zip(ids, np.r_[0, ends[:-1]], ends, strict=True):
+            row = dict(lap=int(lap), first_lap=int(ids[0]), last_lap=int(ids[-1]), feasible=witness is not None)
+            if witness is not None:
+                soc, spent, harvest = witness
+                row.update(start_mj=soc[start], end_mj=soc[end], deployed_mj=spent[start:end].sum(),
+                           harvested_mj=harvest[start:end].sum())
+            records.append(row)
+    return records
+
+
+def drag_range(laps, low, high, car, linked=False):
     """Hull of drag values with a feasible store on >=95% of training laps, allowing isolated bad laps."""
     args = constants(car)
     limit = car.rules["power_unit"]["harvest_per_lap_mj"]
 
+    groups = list(blocks(laps if isinstance(laps, dict) else dict(enumerate(laps)), linked))
+
     def feasible(area):
-        count = sum(0 <= trajectory(lap, area, *args)[0] <= limit+1e-9 for lap in laps)
+        ice, eta, regen, capacity, allowance, frac = args
+        count = 0
+        for ids, parts, ends in groups:
+            lower, upper = shaft_bounds(parts, area, area, ice, eta, allowance, frac)
+            if block_path(lower, upper, regen, capacity, limit, ends) is not None:
+                count += len(ids)
         return count >= .95 * len(laps)
 
     # If both endpoints pass, their hull already covers the input range.
@@ -170,23 +219,23 @@ def ledger(laps, cda, car):
     return data
 
 
-def zone_extreme(low, high, selected, sign, regen, capacity, budget):
+def zone_extreme(low, high, selected, sign, regen, capacity, budget, ends=None):
     """Extremise selected shaft MJ with storage, per-lap recovery and phase power limits."""
     forced_low, forced_high = low.copy(), high.copy()
     if sign == 1:
         forced_high[selected] = low[selected]
     else:
         forced_low[selected] = high[selected]
-    recovered, _ = path(forced_low, forced_high, regen, capacity)
+    ends = np.array([len(low)]) if ends is None else ends
     independent = (low if sign == 1 else high)[selected].sum()
-    if 0 <= recovered <= budget + 1e-9:
+    if block_path(forced_low, forced_high, regen, capacity, budget, ends) is not None:
         return independent
     weight = sign*selected.astype(float)
-    result = flow_optimum(low, high, weight, -weight, regen, capacity, budget)
+    result = flow_optimum(low, high, weight, -weight, regen, capacity, budget, ends=ends)
     return independent if np.isnan(result) else sign*result
 
 
-def flow_optimum(low, high, weight_d, weight_h, regen, capacity, budget):
+def flow_optimum(low, high, weight_d, weight_h, regen, capacity, budget, ends=None, flows=False):
     """Minimise a linear work or charge objective over a complete lap."""
     # D, H are deployed and harvested shaft MJ; S is store MJ at all n+1 boundaries.
     # Sign-changing segments may time-share within their two power limits.
@@ -198,31 +247,35 @@ def flow_optimum(low, high, weight_d, weight_h, regen, capacity, budget):
     mixed = (max_d > 0) & (max_h > 0)
     sharing = sparse.hstack([sparse.diags(1/np.where(mixed, max_d, 1)),
                              sparse.diags(1/np.where(mixed, max_h, 1)), sparse.csr_matrix((n, n+1))]).tocsr()[mixed]
-    cap = np.r_[np.zeros(n), np.full(n, regen), np.zeros(n+1)]
+    ends = np.array([n]) if ends is None else ends
+    lap = np.repeat(np.arange(len(ends)), np.diff(np.r_[0, ends]))
+    cap = sparse.coo_matrix((np.full(n, regen), (lap, n+np.arange(n))), shape=(len(ends), 3*n+1))
     objective = np.r_[weight_d, weight_h, np.zeros(n+1)]
-    result = linprog(objective, A_eq=balance, b_eq=np.zeros(n), A_ub=sparse.vstack([sharing, cap[None, :]]),
-                     b_ub=np.r_[np.ones(mixed.sum()), budget],
+    result = linprog(objective, A_eq=balance, b_eq=np.zeros(n), A_ub=sparse.vstack([sharing, cap]),
+                     b_ub=np.r_[np.ones(mixed.sum()), np.full(len(ends), budget)],
                      bounds=np.column_stack((np.r_[np.maximum(low, 0), np.maximum(-high, 0), np.zeros(n+1)],
                                              np.r_[max_d, max_h, np.full(n+1, capacity)])), method="highs")
     if result.status == 2:
-        return np.nan  # empty feasible set
+        return None if flows else np.nan  # empty feasible set
     if not result.success:
         raise RuntimeError(result.message)
+    if flows:
+        return result.x[2*n:], result.x[:n], regen*result.x[n:2*n]
     return result.fun
 
 
-def zone_power_ranges(laps, low_area, high_area, car):
+def zone_power_ranges(laps, low_area, high_area, car, linked=False):
     """Outer bounds on each zone's time-weighted training mean after enforcing the lap balance."""
     ice, eta, regen, capacity, allowance, frac = constants(car)
     budget = car.rules["power_unit"]["harvest_per_lap_mj"]
     totals = {}
-    for parts in laps.values():
+    for _, parts, ends in blocks(laps, linked):
         low, high = shaft_bounds(parts, low_area, high_area, ice, eta, allowance, frac)
         for zone in np.unique(parts[:, 6]):
             if zone < 0:
                 continue
             sel = parts[:, 6] == zone
             acc = totals.setdefault(zone, np.zeros(3))
-            acc += (parts[sel, 0].sum(), zone_extreme(low, high, sel, 1, regen, capacity, budget),
-                    zone_extreme(low, high, sel, -1, regen, capacity, budget))
+            acc += (parts[sel, 0].sum(), zone_extreme(low, high, sel, 1, regen, capacity, budget, ends),
+                    zone_extreme(low, high, sel, -1, regen, capacity, budget, ends))
     return {zone: value[1:]*1000/value[0] for zone, value in totals.items()}

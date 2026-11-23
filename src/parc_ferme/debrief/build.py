@@ -19,10 +19,11 @@ from .. import jolpica
 from ..bench import grip as grip_bench
 from ..bench import identifiability
 from ..bench import pace as pace_bench
+from ..core.car import rules
 from ..core.track import FEED_UNITS_PER_M, Track
 from ..models import grip, pace
 from ..session import Session
-from . import channels, summary
+from . import channels, energy, summary
 
 CIRCUIT_NAMES = {15: "Circuit de Barcelona-Catalunya"}
 MAP_STEP_M = 10.0
@@ -217,5 +218,11 @@ def build(s: Session) -> dict:
         "code": code_version(),
         "generated_utc": datetime.now(UTC).strftime("%Y-%m-%d %H:%M"),
     }
+    zones = rules()["active_aero"]["zones"]
+    if s.meta["year"] == 2026 and str(s.meta["circuit_key"]) in zones and all(c.passed or not c.gating for c in checks):
+        try:
+            d["energy_fit"] = energy.study(s, channels.SIM_FUEL_KG, d["code"])
+        except ValueError as err:
+            d["energy_unavailable"] = str(err)
     d["summary"] = summary.findings(d)
     return d

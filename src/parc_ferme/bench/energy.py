@@ -6,10 +6,11 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from numba import njit
 
 from ..core.car import Car, G
 from ..core.track import Track
-from ..models.energy import windows
+from ..models.energy import held_out, windows
 from ..models.energy_fit import profile
 from . import coverage as cv
 
@@ -39,6 +40,45 @@ def load():
 STRATEGIES = ("clip", "early_taper", "harvest", "partial")
 
 
+@njit(cache=True)
+def drive_sector(entry, soc, recovered, mass, ice, grade, aero, wind, strength, knee, harvest, lift, mode, apex,
+                 dt, capacity, budget, eta, regen, machine, taper_start, taper_end):
+    """Forward dynamics. The caller carries speed and store charge across every timing line."""
+    v, s, energy = np.empty(341), np.zeros(341), np.zeros(341)
+    v[0] = entry
+    for i in range(340):
+        time, speed = i*dt, v[i]
+        cap = machine * min(1., max(0., (taper_end-speed)/(taper_end-taper_start)))
+        if mode == 0:
+            k = strength*cap*(time < knee)
+        elif mode == 1:
+            k = strength*cap*min(1., max(0., 1-(time-knee)/3))
+        elif mode == 2:
+            k = strength*cap if time < knee else -harvest
+        else:
+            k = cap*(.35+.18*np.sin((time-knee)/2))
+        resistance = aero*(speed+wind)**2 + mass*G*grade
+        engine = ice*(1-.35*(70 < speed < 70.8))
+        if time >= lift:
+            k, engine = -harvest, 0.
+        braking = 10.5 <= time < 14.
+        decel = 0.
+        if braking:
+            decel = min(0., (apex-speed)/(14.-time))
+            k = -min(machine, max(0., -(mass*decel+resistance)*speed/1000)/eta)
+        if time >= 14.:
+            k, engine = .22*cap, .75*ice
+        k = min(soc*1000/dt, max(k, -max(0., min(budget-recovered, capacity-soc))*1000/(dt*regen)))
+        gained = max(0., -k)*regen*dt/1000
+        soc = max(0., soc+gained-max(k, 0.)*dt/1000)
+        recovered += gained
+        accel = (eta*(engine+k)*1000/speed-resistance)/mass
+        v[i+1] = speed + dt*(min(accel, decel) if braking else accel)
+        s[i+1] = s[i]+.5*dt*(speed+v[i+1])
+        energy[i+1] = energy[i]+dt*k
+    return v, s, energy, soc, recovered
+
+
 def experiment(seed, strategy, paired=False):
     """Four sequential straights, lifts, braking and exits per lap; carry the hidden store through all four."""
     from ..models.battery import segments
@@ -52,70 +92,39 @@ def experiment(seed, strategy, paired=False):
     mass = car.mass - car.fuel_kg + (72 - 68*lap_ids/laps) + rng.uniform(-2, 2)
     capacity = car.rules["power_unit"]["energy_store_mj"]
     budget = car.rules["power_unit"]["harvest_per_lap_mj"]
-    soc = rng.uniform(.1, capacity, laps)
-    recovered = np.zeros(laps)
+    soc = rng.uniform(.1, capacity)
     dt = .05
     t = np.arange(341) * dt
-    entry = rng.uniform(53, 62, laps)
+    entry = rng.uniform(53, 62)
     x = np.arange(1800.)
     mask = np.ones(len(x), int)
     records, truth = [], {zone: [] for zone in range(4)}
-    battery = {lap: [] for lap in lap_ids}
-    for zone in range(4):
-        grade = rng.uniform(-.012, .016)
-        ref = Track("bench", x, x, x*0, x*0, x*0, x*0, 1., z=x*grade)
-        wind = rng.normal(0, 2.) + rng.normal(0, .8, laps)
-        tow = 1 - rng.uniform(.04, .16, laps) * (rng.random(laps) < .30)
-        knee = rng.uniform(2, 9) + rng.normal(0, 1.2, laps)
-        strength = rng.uniform(.65, 1, laps)
-        harvest = rng.uniform(70, 260, laps)
-        lift = rng.uniform(8, 10.3, laps)
-        mode = rng.choice(STRATEGIES, laps) if strategy == "switching" else np.full(laps, strategy)
-        v = np.empty((len(t), laps))
-        v[0] = entry
-        s = np.zeros_like(v)
-        energy = np.zeros_like(v)
-        apex = rng.uniform(42, 48, laps)
-        for i, time in enumerate(t[:-1]):
-            speed = v[i]
-            cap = car.mguk_limit_w(speed) / 1000
-            k = np.select([mode == "clip", mode == "early_taper", mode == "harvest"],
-                          [strength*cap*(time < knee), strength*cap*np.clip(1-(time-knee)/3, 0, 1),
-                           np.where(time < knee, strength*cap, -harvest)],
-                          default=cap*(.35+.18*np.sin((time-knee)/2)))
-            resistance = .5*car.rho*cda*tow*(speed+wind)**2 + mass*G*(grade + car.crr)
-            coast = time >= lift
-            braking = 10.5 <= time < 14.
-            exiting = time >= 14.
-            k = np.where(coast, -harvest, k)
-            if braking:
-                decel = np.minimum(0., (apex-speed)/(14.-time))
-                brake_kw = np.maximum(0., -(mass*decel+resistance)*speed/1000)
-                k = -np.minimum(car.mguk_w/1000, brake_kw/car.driveline_eff)
-            if exiting:
-                k = .22*cap
-            charge_room = np.minimum(budget-recovered, capacity-soc)
-            k = np.clip(k, -np.maximum(0., charge_room)*1000/(dt*car.regen_eff), soc*1000/dt)
-            gained = np.maximum(0., -k)*car.regen_eff*dt/1000
-            soc += gained - np.maximum(k, 0.)*dt/1000
-            recovered += gained
-            engine = ice * (1-.35*((speed > 70) & (speed < 70.8))) * (~coast)
-            if exiting:
-                engine = .75*ice
-            power = car.driveline_eff*(engine+k)*1000
-            accel = (power/speed-resistance)/mass
-            if braking:
-                accel = np.minimum(accel, decel)  # friction brakes supply the remainder
-            v[i+1] = speed + dt*accel
-            s[i+1] = s[i]+.5*dt*(speed+v[i+1])
-            energy[i+1] = energy[i]+dt*k
-        entry = v[-1]
-        tick_grid = np.arange(2, len(t)-1, 5)
-        for j, lap in enumerate(lap_ids):
+    battery = {lap: [] for lap in lap_ids if not held_out(lap)}
+    grades = rng.uniform(-.012, .016, 4)
+    refs = [Track("bench", x, x, x*0, x*0, x*0, x*0, 1., z=x*g) for g in grades]
+    winds = rng.normal(0, 2., 4)
+    knees = rng.uniform(2, 9, 4)
+    tick_grid = np.arange(2, len(t)-1, 5)
+    pu = car.rules["power_unit"]
+    for j, lap in enumerate(lap_ids):
+        recovered = 0.
+        for zone, ref in enumerate(refs):
+            wind = winds[zone] + rng.normal(0, .8)
+            tow = 1 - rng.uniform(.04, .16)*(rng.random() < .30)
+            lift = rng.uniform(8, 10.3)
+            mode = rng.integers(4) if strategy == "switching" else STRATEGIES.index(strategy)
+            v, s, energy, soc, recovered = drive_sector(
+                entry, soc, recovered, mass[j], ice[j], grades[zone]+car.crr, .5*car.rho*cda*tow, wind,
+                rng.uniform(.65, 1), knees[zone]+rng.normal(0, 1.2), rng.uniform(70, 260), lift, mode,
+                rng.uniform(42, 48), dt, capacity, budget, car.driveline_eff, car.regen_eff, car.mguk_w/1000,
+                pu["mgu_k_taper_start_kph"]/3.6, pu["mgu_k_taper_end_kph"]/3.6)
+            entry = v[-1]
+            if held_out(lap):
+                continue
             tick = tick_grid + rng.integers(-1, 2, len(tick_grid))
             tick = tick[rng.random(len(tick)) > .035]
-            throttle = np.where(t[tick] >= 14., 75, 100*(t[tick] < lift[j]))
-            sample = pd.DataFrame(dict(s=np.rint(s[tick, j]), t=t[tick], v=np.rint(v[tick, j]*3.6)/3.6,
+            throttle = np.where(t[tick] >= 14., 75, 100*(t[tick] < lift))
+            sample = pd.DataFrame(dict(s=np.rint(s[tick]), t=t[tick], v=np.rint(v[tick]*3.6)/3.6,
                                        brake=100*((t[tick] >= 10.5) & (t[tick] < 14.)), throttle=throttle))
             straight = windows(sample, ref, mask, car)
             for row in straight:
@@ -127,15 +136,16 @@ def experiment(seed, strategy, paired=False):
                     row.update(zone_id=zone, lap=int(lap))
                     records.append(row)
                     start, end = np.rint(np.array([row["start_s"], row["end_s"]])/dt).astype(int)
-                    truth[zone].append([energy[end, j]-energy[start, j], t[end]-t[start]])
+                    truth[zone].append([energy[end]-energy[start], t[end]-t[start]])
     data = pd.DataFrame(records)
     fits = {"windows": None}
     if paired:
         fits["battery"] = {lap: np.concatenate(parts) for lap, parts in battery.items()}
+        fits["linked"] = fits["battery"]
     results = []
     for name, parts in fits.items():
         try:
-            _, _, quantities = profile(data, car, parts)
+            _, _, quantities = profile(data, car, parts, linked=name == "linked")
         except ValueError as err:
             results.append(dict(seed=seed, strategy=strategy, model=name, failure=str(err)))
             continue
@@ -171,11 +181,11 @@ def run(quick=False):
     audit_strategies = (*STRATEGIES, "switching")
     audit, audit_fail = trials(20000, n_audit, audit_strategies, paired=True)
     results = {}
-    for model in ("windows", "battery"):
+    for model in ("windows", "battery", "linked"):
         results[model] = assess(cal[cal.model == model], audit[audit.model == model], n_cal, n_audit,
                                 [r for r in cal_fail if r["model"] == model],
                                 [r for r in audit_fail if r["model"] == model])
-    return results["windows"] | {"battery": results["battery"]}
+    return results["windows"] | {"battery": results["battery"], "linked": results["linked"]}
 
 
 def assess(cal, audit, n_cal, n_audit, cal_fail, audit_fail):

@@ -388,8 +388,15 @@ def health_tiles(d: dict) -> list[str]:
     short = sum(x["line_short_m"] for x in g["sections"] if x["line_short_m"] is not None)
     tiles.append(_tile("warn", "Racing line length", f"−{short:.0f} m",
                        "Modelled line against the distance the cars drove, per lap"))
-    tiles.append(_tile("warn", "Drag & energy", "not fitted",
-                       "Needs the energy model (S4); straight-line speed is not used"))
+    energy = d.get("energy_fit")
+    if energy and energy["audit_passed"]:
+        label = "Drag unresolved" if energy["drag_common_overlap"] else "Interval estimates"
+        tiles.append(_tile("warn", "Drag & energy", label,
+                           f'{energy["deployment_includes_zero"]} of {energy["deployment_intervals"]} zone power '
+                           'intervals include both harvest and deployment'))
+    else:
+        detail = d.get("energy_unavailable", "Interval coverage check unavailable")
+        tiles.append(_tile("warn", "Drag & energy", "Unchecked" if energy else "Unavailable", detail))
     return tiles
 
 
@@ -440,6 +447,33 @@ def identifiability_card(d: dict) -> str:
   </div>"""
 
 
+def energy_card(d: dict) -> str:
+    fit = d.get("energy_fit")
+    if not fit or not fit["audit_passed"]:
+        return ""
+    rows = []
+    for key, label, precision, unit in (("drag_m2", "Effective drag area", 3, "m²"),
+                                        ("deployment_kw", "Mean signed zone power", 1, "kW")):
+        width = fit["interval_comparison"][key]
+        audit = fit["bench"][key]
+        rows.append(f'<tr><td>{label}</td><td class="n">{width["per_lap_median"]:.{precision}f} {unit}</td>'
+                    f'<td class="n">{width["linked_median"]:.{precision}f} {unit}</td>'
+                    f'<td class="n">{width["narrower"]}/{width["pairs"]}</td>'
+                    f'<td class="n">{audit["covered_cars"]}/{audit["cars"]}</td></tr>')
+    speed = fit["window_scores"]
+    return f"""<div class="card"><div class="card-h"><span>Energy and drag</span>
+      <span class="dim">Median 95% interval width</span></div><div class="tbl-wrap"><table class="tbl">
+      <thead><tr><th>Quantity</th><th class="n">Independent laps</th><th class="n">Linked laps</th>
+      <th class="n">Narrowed</th><th class="n">Bench cars covered</th></tr></thead>
+      <tbody>{''.join(rows)}</tbody></table></div>
+      <p class="dim">Charge carries across {fit["linked_boundaries"]} timing-line crossings.
+      {fit["feasible_chains"]}/{fit["chains"]} training sequences admit a battery history.
+      Power coverage requires all four synthetic zones to contain their true mean.</p>
+      <p class="dim">Held-out exit speed · {speed["joint"]["mae_kph"]:.2f} km/h mean absolute error
+      across {fit["scored_windows"]:,} full-throttle windows. Local speed-gain baseline
+      {speed["local_speed_gain"]["mae_kph"]:.2f} km/h. {e(fit["split"])}.</p></div>"""
+
+
 def health_workspace(d: dict) -> str:
     rows = []
     for c in d["checks"]:
@@ -453,6 +487,7 @@ def health_workspace(d: dict) -> str:
              + (" with uncommitted changes" if code["dirty"] else ""))
     return f"""<section class="ws" id="ws-health" hidden>
   <div class="ht-grid">{''.join(health_tiles(d))}</div>
+  {energy_card(d)}
   {identifiability_card(d)}
   <div class="card"><div class="card-h"><span>Data checks</span><span class="dim">{build}</span></div>
     <table class="tbl">{''.join(rows)}</table></div>

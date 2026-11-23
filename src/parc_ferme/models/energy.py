@@ -50,8 +50,13 @@ def windows(samples, ref, zones, car):
     return rows
 
 
+def held_out(lap):
+    """Three consecutive race laps per 15, common to all cars, fixed before fitting."""
+    return ((lap - 7) % 15) < 3
+
+
 def analyse(session, fuel_kg, *, multi_lap=False, battery_laps=None):
-    """Straight windows on fastest or all green laps. Reserve every fifth race lap for validation."""
+    """Straight windows on fastest or all green laps. Reserve three-lap blocks for validation."""
     config = rules()["active_aero"]["zones"].get(str(session.meta["circuit_key"]))
     if not config:
         raise ValueError("no straight-mode zones configured for this circuit")
@@ -60,7 +65,7 @@ def analyse(session, fuel_kg, *, multi_lap=False, battery_laps=None):
     laps = warmup.laps(session)
     green = laps[laps.green]
     loc = session.location
-    geometry_laps = green[green.lap_number % 5 != 0] if multi_lap else green
+    geometry_laps = green[~held_out(green.lap_number)] if multi_lap else green
     ref, _ = driven_line(session.circuit.name, loc[(loc.x != 0) | (loc.y != 0)], geometry_laps)
     corners = session.circuit.corners
     s, _ = Registration.identity().project(ref, corners.x_m.to_numpy(), corners.y_m.to_numpy())

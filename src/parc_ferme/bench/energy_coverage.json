@@ -1,125 +1,125 @@
 {
   "version": {
-    "commit": "93f725f",
+    "commit": "bf8c778",
     "dirty": true
   },
-  "fingerprint": "978d15fa70a67d83403d821a0d39e692cc4a8bf8b750fcc252db093357ba3234",
+  "fingerprint": "4075f83e3dcb177b6af64f6194f5caf02d30830308fabf8997a34159222876b5",
   "calibration_per_strategy": 40,
   "audit_per_strategy": 60,
   "scales": {
-    "deployment_kw": 0.7770900413836026,
-    "drag_m2": 0.843673461119789
+    "deployment_kw": 0.78905871832171,
+    "drag_m2": 0.771667077085564
   },
   "quantities": {
     "deployment_kw": {
       "all": {
         "cars": 300,
-        "covered_cars": 297,
-        "cover_95": 0.99,
-        "sd_z": 0.3512139816638121,
-        "mean_z": -1.0804694516827065,
-        "median_width": 308.22359967114915,
+        "covered_cars": 293,
+        "cover_95": 0.9766666666666667,
+        "sd_z": 0.3516958459988459,
+        "mean_z": -0.9543249870998172,
+        "median_width": 328.50275395742506,
         "calibrated": true
       },
       "clip": {
         "cars": 60,
-        "covered_cars": 60,
-        "cover_95": 1.0,
-        "sd_z": 0.2566531234570492,
-        "mean_z": -1.3226667036657176,
-        "median_width": 348.90742584925306,
+        "covered_cars": 58,
+        "cover_95": 0.9666666666666667,
+        "sd_z": 0.32453395989062295,
+        "mean_z": -1.1222144925900273,
+        "median_width": 378.7504215202721,
         "calibrated": true
       },
       "early_taper": {
         "cars": 60,
-        "covered_cars": 57,
-        "cover_95": 0.95,
-        "sd_z": 0.27170845126019216,
-        "mean_z": -1.4270205451282971,
-        "median_width": 335.79542460339405,
+        "covered_cars": 55,
+        "cover_95": 0.9166666666666666,
+        "sd_z": 0.37384804649056214,
+        "mean_z": -1.172932715098294,
+        "median_width": 360.752844304781,
         "calibrated": true
       },
       "harvest": {
         "cars": 60,
         "covered_cars": 60,
         "cover_95": 1.0,
-        "sd_z": 0.2911927125545245,
-        "mean_z": -0.8064535736796441,
-        "median_width": 251.90897212366383,
+        "sd_z": 0.3113227463116028,
+        "mean_z": -0.7942994173642238,
+        "median_width": 258.11072372593077,
         "calibrated": true
       },
       "partial": {
         "cars": 60,
         "covered_cars": 60,
         "cover_95": 1.0,
-        "sd_z": 0.16906429963514286,
-        "mean_z": -0.9428809059839071,
-        "median_width": 378.30743599383186,
+        "sd_z": 0.2265397885767793,
+        "mean_z": -0.8713490510600462,
+        "median_width": 385.53427289707054,
         "calibrated": true
       },
       "switching": {
         "cars": 60,
         "covered_cars": 60,
         "cover_95": 1.0,
-        "sd_z": 0.2456083617843761,
-        "mean_z": -0.9033255299559662,
-        "median_width": 274.39337787745785,
+        "sd_z": 0.31239837524946484,
+        "mean_z": -0.810829259386495,
+        "median_width": 285.2493943403771,
         "calibrated": true
       }
     },
     "drag_m2": {
       "all": {
         "cars": 300,
-        "covered_cars": 297,
-        "cover_95": 0.99,
-        "sd_z": 0.38738701452535096,
-        "mean_z": -1.1942194342172565,
-        "median_width": 0.7338471625045713,
+        "covered_cars": 287,
+        "cover_95": 0.9566666666666667,
+        "sd_z": 0.45508268837051324,
+        "mean_z": -1.1698730652562914,
+        "median_width": 0.7038579942322634,
         "calibrated": true
       },
       "clip": {
         "cars": 60,
-        "covered_cars": 60,
-        "cover_95": 1.0,
-        "sd_z": 0.2411893901201341,
-        "mean_z": -1.4067736784831166,
-        "median_width": 0.9134924378079461,
+        "covered_cars": 58,
+        "cover_95": 0.9666666666666667,
+        "sd_z": 0.36196701816742544,
+        "mean_z": -1.2911087078728762,
+        "median_width": 0.895880491102425,
         "calibrated": true
       },
       "early_taper": {
         "cars": 60,
-        "covered_cars": 58,
-        "cover_95": 0.9666666666666667,
-        "sd_z": 0.29401223980104846,
-        "mean_z": -1.491313323798744,
-        "median_width": 0.8401217424381254,
+        "covered_cars": 54,
+        "cover_95": 0.9,
+        "sd_z": 0.3957034746068859,
+        "mean_z": -1.3726857895211537,
+        "median_width": 0.8342275904645078,
         "calibrated": true
       },
       "harvest": {
         "cars": 60,
-        "covered_cars": 60,
-        "cover_95": 1.0,
-        "sd_z": 0.335821305897932,
-        "mean_z": -0.9751013340569352,
-        "median_width": 0.5579139788687519,
+        "covered_cars": 58,
+        "cover_95": 0.9666666666666667,
+        "sd_z": 0.5097462308419507,
+        "mean_z": -1.0645052659051784,
+        "median_width": 0.5068937119769881,
         "calibrated": true
       },
       "partial": {
         "cars": 60,
-        "covered_cars": 59,
-        "cover_95": 0.9833333333333333,
-        "sd_z": 0.32225273381369596,
-        "mean_z": -1.0955559823513743,
-        "median_width": 1.0500352972586977,
+        "covered_cars": 60,
+        "cover_95": 1.0,
+        "sd_z": 0.40978915316603676,
+        "mean_z": -1.078692049318528,
+        "median_width": 0.9208328625213007,
         "calibrated": true
       },
       "switching": {
         "cars": 60,
-        "covered_cars": 60,
-        "cover_95": 1.0,
-        "sd_z": 0.40915863102783817,
-        "mean_z": -1.0023528523961132,
-        "median_width": 0.6349222281504818,
+        "covered_cars": 57,
+        "cover_95": 0.95,
+        "sd_z": 0.49103742512194337,
+        "mean_z": -1.042373513663721,
+        "median_width": 0.5690783625976742,
         "calibrated": true
       }
     }
@@ -130,119 +130,243 @@
     "calibration_per_strategy": 40,
     "audit_per_strategy": 60,
     "scales": {
-      "deployment_kw": 0.7770900413836026,
-      "drag_m2": 0.843673461119789
+      "deployment_kw": 0.78905871832171,
+      "drag_m2": 0.771667077085564
     },
     "quantities": {
       "deployment_kw": {
         "all": {
           "cars": 300,
-          "covered_cars": 297,
-          "cover_95": 0.99,
-          "sd_z": 0.3512139816638122,
-          "mean_z": -1.0804694516827065,
-          "median_width": 308.22359967114915,
+          "covered_cars": 293,
+          "cover_95": 0.9766666666666667,
+          "sd_z": 0.3516958459988459,
+          "mean_z": -0.9543249870998172,
+          "median_width": 328.50275395742494,
           "calibrated": true
         },
         "clip": {
           "cars": 60,
-          "covered_cars": 60,
-          "cover_95": 1.0,
-          "sd_z": 0.25665312345704927,
-          "mean_z": -1.3226667036657178,
-          "median_width": 348.90742584925306,
+          "covered_cars": 58,
+          "cover_95": 0.9666666666666667,
+          "sd_z": 0.324533959890623,
+          "mean_z": -1.1222144925900275,
+          "median_width": 378.7504215202721,
           "calibrated": true
         },
         "early_taper": {
           "cars": 60,
-          "covered_cars": 57,
-          "cover_95": 0.95,
-          "sd_z": 0.27170845126019216,
-          "mean_z": -1.4270205451282971,
-          "median_width": 335.79542460339405,
+          "covered_cars": 55,
+          "cover_95": 0.9166666666666666,
+          "sd_z": 0.37384804649056214,
+          "mean_z": -1.172932715098294,
+          "median_width": 360.752844304781,
           "calibrated": true
         },
         "harvest": {
           "cars": 60,
           "covered_cars": 60,
           "cover_95": 1.0,
-          "sd_z": 0.2911927125545245,
-          "mean_z": -0.8064535736796441,
-          "median_width": 251.90897212366377,
+          "sd_z": 0.31132274631160284,
+          "mean_z": -0.7942994173642238,
+          "median_width": 258.11072372593077,
           "calibrated": true
         },
         "partial": {
           "cars": 60,
           "covered_cars": 60,
           "cover_95": 1.0,
-          "sd_z": 0.16906429963514288,
-          "mean_z": -0.9428809059839073,
-          "median_width": 378.30743599383175,
+          "sd_z": 0.22653978857677934,
+          "mean_z": -0.8713490510600462,
+          "median_width": 385.5342728970705,
           "calibrated": true
         },
         "switching": {
           "cars": 60,
           "covered_cars": 60,
           "cover_95": 1.0,
-          "sd_z": 0.24560836178437612,
-          "mean_z": -0.9033255299559663,
-          "median_width": 274.3933778774578,
+          "sd_z": 0.3123983752494649,
+          "mean_z": -0.8108292593864951,
+          "median_width": 285.2493943403771,
           "calibrated": true
         }
       },
       "drag_m2": {
         "all": {
           "cars": 300,
-          "covered_cars": 297,
-          "cover_95": 0.99,
-          "sd_z": 0.38738701452535096,
-          "mean_z": -1.1942194342172565,
-          "median_width": 0.7338471625045713,
+          "covered_cars": 287,
+          "cover_95": 0.9566666666666667,
+          "sd_z": 0.45508268837051324,
+          "mean_z": -1.1698730652562914,
+          "median_width": 0.7038579942322634,
           "calibrated": true
         },
         "clip": {
           "cars": 60,
-          "covered_cars": 60,
-          "cover_95": 1.0,
-          "sd_z": 0.2411893901201341,
-          "mean_z": -1.4067736784831166,
-          "median_width": 0.9134924378079461,
+          "covered_cars": 58,
+          "cover_95": 0.9666666666666667,
+          "sd_z": 0.36196701816742544,
+          "mean_z": -1.2911087078728762,
+          "median_width": 0.895880491102425,
           "calibrated": true
         },
         "early_taper": {
           "cars": 60,
+          "covered_cars": 54,
+          "cover_95": 0.9,
+          "sd_z": 0.3957034746068859,
+          "mean_z": -1.3726857895211537,
+          "median_width": 0.8342275904645078,
+          "calibrated": true
+        },
+        "harvest": {
+          "cars": 60,
           "covered_cars": 58,
           "cover_95": 0.9666666666666667,
-          "sd_z": 0.29401223980104846,
-          "mean_z": -1.491313323798744,
-          "median_width": 0.8401217424381254,
+          "sd_z": 0.5097462308419507,
+          "mean_z": -1.0645052659051784,
+          "median_width": 0.5068937119769881,
+          "calibrated": true
+        },
+        "partial": {
+          "cars": 60,
+          "covered_cars": 60,
+          "cover_95": 1.0,
+          "sd_z": 0.40978915316603676,
+          "mean_z": -1.078692049318528,
+          "median_width": 0.9208328625213007,
+          "calibrated": true
+        },
+        "switching": {
+          "cars": 60,
+          "covered_cars": 57,
+          "cover_95": 0.95,
+          "sd_z": 0.49103742512194337,
+          "mean_z": -1.042373513663721,
+          "median_width": 0.5690783625976742,
+          "calibrated": true
+        }
+      }
+    },
+    "failed_calibrations": [],
+    "failed_audits": []
+  },
+  "linked": {
+    "calibration_per_strategy": 40,
+    "audit_per_strategy": 60,
+    "scales": {
+      "deployment_kw": 0.78905871832171,
+      "drag_m2": 0.771667077085564
+    },
+    "quantities": {
+      "deployment_kw": {
+        "all": {
+          "cars": 300,
+          "covered_cars": 293,
+          "cover_95": 0.9766666666666667,
+          "sd_z": 0.3519702657235954,
+          "mean_z": -0.9535351165385286,
+          "median_width": 328.50275395742494,
+          "calibrated": true
+        },
+        "clip": {
+          "cars": 60,
+          "covered_cars": 58,
+          "cover_95": 0.9666666666666667,
+          "sd_z": 0.3269508750289078,
+          "mean_z": -1.1204732017065617,
+          "median_width": 378.7504215202721,
+          "calibrated": true
+        },
+        "early_taper": {
+          "cars": 60,
+          "covered_cars": 55,
+          "cover_95": 0.9166666666666666,
+          "sd_z": 0.37511101646201533,
+          "mean_z": -1.1707246531753157,
+          "median_width": 360.752844304781,
           "calibrated": true
         },
         "harvest": {
           "cars": 60,
           "covered_cars": 60,
           "cover_95": 1.0,
-          "sd_z": 0.335821305897932,
-          "mean_z": -0.9751013340569352,
-          "median_width": 0.5579139788687519,
+          "sd_z": 0.3113227463116028,
+          "mean_z": -0.7942994173642238,
+          "median_width": 258.1107237259307,
           "calibrated": true
         },
         "partial": {
           "cars": 60,
-          "covered_cars": 59,
-          "cover_95": 0.9833333333333333,
-          "sd_z": 0.32225273381369596,
-          "mean_z": -1.0955559823513743,
-          "median_width": 1.0500352972586977,
+          "covered_cars": 60,
+          "cover_95": 1.0,
+          "sd_z": 0.2265397885767793,
+          "mean_z": -0.8713490510600462,
+          "median_width": 385.53427289707054,
           "calibrated": true
         },
         "switching": {
           "cars": 60,
           "covered_cars": 60,
           "cover_95": 1.0,
-          "sd_z": 0.40915863102783817,
-          "mean_z": -1.0023528523961132,
-          "median_width": 0.6349222281504818,
+          "sd_z": 0.31239837524946484,
+          "mean_z": -0.810829259386495,
+          "median_width": 285.2493943403771,
+          "calibrated": true
+        }
+      },
+      "drag_m2": {
+        "all": {
+          "cars": 300,
+          "covered_cars": 287,
+          "cover_95": 0.9566666666666667,
+          "sd_z": 0.4567677488013693,
+          "mean_z": -1.168519714072773,
+          "median_width": 0.7038579942322634,
+          "calibrated": true
+        },
+        "clip": {
+          "cars": 60,
+          "covered_cars": 58,
+          "cover_95": 0.9666666666666667,
+          "sd_z": 0.3680683827789883,
+          "mean_z": -1.288368063532397,
+          "median_width": 0.895880491102425,
+          "calibrated": true
+        },
+        "early_taper": {
+          "cars": 60,
+          "covered_cars": 54,
+          "cover_95": 0.9,
+          "sd_z": 0.4027847663752394,
+          "mean_z": -1.3686596779440399,
+          "median_width": 0.8342275904645078,
+          "calibrated": true
+        },
+        "harvest": {
+          "cars": 60,
+          "covered_cars": 58,
+          "cover_95": 0.9666666666666667,
+          "sd_z": 0.5097462308419507,
+          "mean_z": -1.0645052659051784,
+          "median_width": 0.5068937119769881,
+          "calibrated": true
+        },
+        "partial": {
+          "cars": 60,
+          "covered_cars": 60,
+          "cover_95": 1.0,
+          "sd_z": 0.40978915316603676,
+          "mean_z": -1.078692049318528,
+          "median_width": 0.9208328625213007,
+          "calibrated": true
+        },
+        "switching": {
+          "cars": 60,
+          "covered_cars": 57,
+          "cover_95": 0.95,
+          "sd_z": 0.49103742512194337,
+          "mean_z": -1.042373513663721,
+          "median_width": 0.5690783625976742,
           "calibrated": true
         }
       }

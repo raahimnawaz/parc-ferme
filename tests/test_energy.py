@@ -68,6 +68,7 @@ def test_windows_exclude_invalid_pedals_and_gaps():
 
 
 def test_joint_fit_holds_out_whole_laps_and_rolls_without_teacher_forcing():
+    from parc_ferme.models.energy import held_out
     from parc_ferme.models.energy_fit import evaluate
 
     rows = []
@@ -80,13 +81,13 @@ def test_joint_fit_holds_out_whole_laps_and_rolls_without_teacher_forcing():
     df = pd.DataFrame(rows)
     scales = dict(drag_m2=1, deployment_kw=1)
     p, held, runs, skipped = evaluate(df, scales, Car())
-    assert not skipped and set(held.lap) == {5, 10} and list(runs.windows) == [3, 3]
-    assert p.train_laps.eq(10).all()
-    df.loc[df.lap % 5 == 0, ["exit_kph", "cap_kw", "grade", "base_kw", "drag_kw_per_m2"]] = 999
+    assert not skipped and set(held.lap) == {7, 8, 9} and list(runs.windows) == [3, 3, 3]
+    assert p.train_laps.eq(9).all()
+    df.loc[held_out(df.lap), ["exit_kph", "cap_kw", "grade", "base_kw", "drag_kw_per_m2"]] = 999
     p2, h2, _, _ = evaluate(df, scales, Car())
     pd.testing.assert_frame_equal(p, p2)
     np.testing.assert_array_equal(held.predicted_kph, h2.predicted_kph)
-    df.loc[(df.lap % 5 == 0) & (df.start_s > 0), ["entry_kph", "entry_m"]] = 320
+    df.loc[(held_out(df.lap)) & (df.start_s > 0), ["entry_kph", "entry_m"]] = 320
     _, _, r2, _ = evaluate(df, scales, Car())
     np.testing.assert_array_equal(runs.predicted_kph, r2.predicted_kph)
     np.testing.assert_array_equal(runs.local_baseline_kph, r2.local_baseline_kph)
@@ -99,5 +100,5 @@ def test_joint_intervals_on_fresh_hidden_strategies():
     audit, failures = energy.trials(30000, 3, (*energy.STRATEGIES, "switching"), paired=True)
     assert not failures
     for (model, quantity), g in audit.groupby(["model", "quantity"]):
-        scales = (study if model == "windows" else study["battery"])["scales"]
+        scales = (study if model == "windows" else study[model])["scales"]
         assert (g.groupby("seed").score.max() <= scales[quantity]).mean() >= .8
