@@ -112,10 +112,57 @@ debrief roadmap and become side projects with no dependency either way. S8 comes
 narrows an interval on the bench. The debrief's critical path is S1–S7, then S9 (strategy, with apex-forecast's race
 model), S10 and S12.
 
+## The identifiability bench (built)
+
+`parc-ferme bench` runs every reported quantity on synthetic races with the confounders switched on and checks how
+often its stated 95% interval holds the true value, and how the errors compare with the stated uncertainty (1 is
+honest). It passes at 90% coverage and 1.25 or less. The results go to `src/parc_ferme/bench/coverage.json`, stamped
+with the commit they were measured on, and Model health shows them with what each session resolves. A short run is
+in the tests.
+
+**Grip (S3).** A synthetic 13-corner circuit whose downforce share at the limit spans 0.14–0.54, as Barcelona's
+lifted corners do; 11 teams of two drivers; each driver's line differs by 1.5% in radius at every corner and 0.8%
+from lap to lap, commitment by 0.7%; compounds, tyre wear that differs by team (25%), fuel from 70 kg, track
+evolution, 6% of downforce lost within 1 s of the car ahead, and ~4 Hz samples with dropouts.
+
+- Found: dirty air made fast-corner intervals too narrow (85% coverage), because teams that spend more laps in
+  traffic read as having less downforce. Fixed with a shared dirty-air term that scales with the corner's downforce
+  share. Real numbers barely moved (Ferrari fast corners 3.8 → 3.9%).
+- Found: leave-one-corner-out can't see the estimator's own error (linearising the corner equation, minima from
+  ~4 Hz samples), about 0.2 points, so on clean laps intervals were 1.6–3.7 times too narrow. That error, measured
+  on clean synthetic laps, is now added in quadrature.
+- Now: tyre grip, downforce, slow- and fast-corner grip all calibrated with every confounder on (errors 1.03–1.13
+  times the stated uncertainty, 93% coverage) and on clean laps (0.83–0.97, 95–98%).
+- Limit: if drivers took exactly the same line every time, corner-grip intervals would be about 1.3 times too
+  narrow. Barcelona's own uncertainties (0.6–0.7 points) match the realistic bench (0.5–0.6), not that case
+  (0.15–0.2).
+
+**Race pace.** A 20-car field as close at the front as Barcelona's, with tyre wear that differs by car (30%) and an
+offset that holds for a whole stint (0.07 s per sector), both measured at Barcelona: a wear slope per car improves
+the fit decisively (F = 4.0, p = 9e-9, about 30% from car to car), and stint averages vary twice as much as
+lap-to-lap noise explains.
+
+- Found: the bootstrap over laps treated laps as independent, and every car was given the same wear rate. Intervals
+  were 2.7–3.7 times too narrow; a 95% interval on a lap gap held the truth 28% of the time.
+- Fixed: a wear slope per car, with gaps reported at the race's median tyre age on the reference compound (on new
+  tyres they would be an extrapolation); generalised least squares with a random offset per stint, its variance by
+  restricted maximum likelihood (estimated from residuals it came out far too small, because each car's own terms
+  absorb most of what its two or three stints differ by); and the winner's curse taken off by parametric bootstrap,
+  since gaps are measured from the car that looks fastest, which usually got lucky.
+- Found, last: with those fixes lap gaps still read 0.45 standard errors too large. Measured from a fixed car the
+  average error was zero but rose with the wear difference: one extra wear slope per car, shared across compounds,
+  overstated a hard-wearing car's extra wear on the Hard the gaps are read on, and picking the fastest-looking car
+  as reference turned that into a bias. A car hard on its tyres is now hard on every compound in proportion, fitted
+  linearly in two stages from the compounds' relative steepness (Barcelona: Hard 0.81, Medium 1.00, Soft 1.20).
+- Now: lap and sector gaps calibrated (errors 1.03–1.05 times the stated uncertainty, 93–95% coverage over 40
+  races of 20 cars).
+- Barcelona changed: Russell +0.03 ± 0.17 s a lap to Hamilton (was +0.16 ± 0.07), Antonelli +0.16, Norris +0.21,
+  Verstappen +0.40, Leclerc +0.50, all ± 0.17 s, at a tyre age of 9 laps on the Hard. The stint offset is about
+  0.19 s a lap and the winner's curse 81 ms. Hamilton and Russell had race pace the data can't tell apart.
+
 ## Order
 
-1. Identifiability bench: synthetic sessions with every confounder above switched on, interval coverage checked in
-   CI, and Model health showing each parameter as resolved, interval only, or not resolved. Retrofitted to S3.
+1. Identifiability bench: built, as above, for S3 and race pace. Every new model joins it before it goes on the page.
 2. S4: deployment and drag fitted together, reported as above.
 3. S5 and S6: fuel from physics, degradation net of it, and corner phases.
 4. S7: braking energy by energy balance, the friction share as a range, the brake load index.

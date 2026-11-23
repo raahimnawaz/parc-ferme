@@ -45,22 +45,25 @@ through the sim and rendered as OpenF1 telemetry) recovers mechanical grip to 0.
 
 | Team | Slow corners | Fast corners |
 |---|---|---|
-| Ferrari | +4.1 ± 1.2% | +3.8 ± 0.9% |
-| Mercedes | +4.9 ± 1.0% | +3.5 ± 1.3% |
-| McLaren | +2.1 ± 0.7% | +3.2 ± 0.8% |
-| Red Bull Racing | +1.8 ± 0.6% | +2.8 ± 0.7% |
-| Alpine | −0.7 ± 0.6% | +0.1 ± 0.3% |
-| Audi | −3.7 ± 0.4% | −0.6 ± 0.5% |
-| Racing Bulls | −0.8 ± 1.1% | −0.6 ± 0.7% |
-| Haas | −0.8 ± 0.3% | −1.7 ± 0.3% |
-| Williams | −1.1 ± 1.9% | −3.1 ± 1.3% |
-| Aston Martin | −3.1 ± 0.6% | −3.3 ± 0.7% |
-| Cadillac | −2.7 ± 0.8% | −4.1 ± 0.5% |
+| Ferrari | +4.1 ± 1.2% | +3.9 ± 0.9% |
+| Mercedes | +4.9 ± 1.0% | +3.7 ± 1.4% |
+| McLaren | +2.1 ± 0.7% | +3.0 ± 0.8% |
+| Red Bull Racing | +1.7 ± 0.6% | +2.6 ± 0.7% |
+| Alpine | −0.6 ± 0.6% | +0.2 ± 0.3% |
+| Audi | −3.7 ± 0.5% | −0.2 ± 0.5% |
+| Racing Bulls | −0.8 ± 1.0% | −0.7 ± 0.7% |
+| Haas | −0.8 ± 0.4% | −1.7 ± 0.4% |
+| Williams | −1.2 ± 1.9% | −3.3 ± 1.4% |
+| Aston Martin | −3.1 ± 0.6% | −3.2 ± 0.8% |
+| Cadillac | −2.8 ± 0.8% | −4.2 ± 0.6% |
 
 Grip here is lateral force capacity relative to the mean team, with compound, tyre age and lap number (fuel burn,
 track evolution) taken out. Slow and fast are the field's slowest and fastest lifted corners, where 18% and 57% of
 the grip comes from downforce. Uncertainties are leave-one-corner-out, so they include a team's drivers taking a
-different line at one corner, not only lap-to-lap noise. The split into tyre grip and downforce is in
+different line at one corner, not only lap-to-lap noise, plus the estimator's own error measured on clean synthetic
+laps; a shared term takes out the downforce lost in dirty air. On the identifiability bench, with driver lines,
+commitment, team-specific wear, fuel, track evolution and dirty air all switched on, the 95% intervals hold the
+truth 93% of the time. The split into tyre grip and downforce is in
 `grip_teams.csv` but is not resolved at one circuit: its uncertainty is 1–7% per team, and only Audi stands out
 (downforce +8 ± 2%, mechanical grip −5 ± 1%). More circuits, with a wider spread of corner speeds, can separate them,
 but only by assuming mechanical grip holds steady while teams change wing level from circuit to circuit; see
@@ -104,13 +107,13 @@ the code version.
 | Lap analysis | Any two cars' fastest or typical laps against distance: speed, time gap, throttle, brake, gear and engine speed, under a strip of sectors, corners and straight-mode zones. A track map coloured by who was faster in each of 25 mini-sectors, the lap summary in timing-screen colours, and a reference cursor that measures any stretch. The lap sim's car for car A's team can be overlaid, with its energy channels. |
 | Race pace | Time lost per lap to the fastest car, sector by sector, and the cost of running in traffic. |
 | Car model | The sim car's parameters, where each comes from (rules, measured, fitted or nominal) and the lap-time effect of +1% on each; cornering grip by team. |
-| Model health | The data checks, both test benches and the known gaps, as status tiles. |
+| Model health | The data checks, both test benches and the known gaps, as status tiles, and the identifiability table: for each reported quantity, how often the bench's 95% intervals held the truth, and whether this session resolves it. |
 
 Distance is corrected distance, as MoTeC and ATLAS build it: speed integrated over the lap and scaled to the lap
 length, so every car's laps line up corner for corner (the speed channel is right to 0.1%, while the position feed's
 timestamps jitter). A typical lap is the median of a car's green laps point by point, scaled to its median lap time,
 and is labelled as not adjusted for tyres, fuel or traffic: on raw medians Hamilton led Russell by 0.97 s a lap,
-with those taken out by 0.16 s.
+with those taken out by 0.03 ± 0.17 s.
 
 The page is static HTML and CSS with one script; traces are drawn with [uPlot](https://github.com/leeoniya/uPlot)
 (MIT), loaded from a pinned CDN build with an integrity hash. `parc-ferme publish` pushes the site to the `gh-pages`
@@ -119,17 +122,21 @@ each session isn't automated yet, and only Barcelona is set up (other circuits n
 source of track widths).
 
 Race pace is compared car by car, sector by sector, against the fastest car. Each green lap's three sector times
-are fitted with an effect per car and shared terms for tyre compound, tyre age (a slope per compound), lap number
-(fuel burn and track evolution) and traffic (the smallest gap to the car ahead during the lap). Per car, not per
-team: pooling both drivers put Mercedes ahead of Ferrari on pace in a race Hamilton won by 19.6 s, because Leclerc
-had a much slower race.
+are fitted with an effect and a tyre-wear slope per car, and shared terms for tyre compound, tyre age (a slope per
+compound), lap number (fuel burn and track evolution) and traffic (the smallest gap to the car ahead during the lap).
+A car hard on its tyres is taken to be hard on every compound in proportion, and gaps are read at the race's median
+tyre age on the reference compound. Laps within a stint share an offset (about 0.19 s a lap at Barcelona), so the fit
+is generalised least squares with a random offset per stint, and the winner's curse of measuring from the
+fastest-looking car is taken off. Per car, not per team: pooling both drivers put Mercedes
+ahead of Ferrari on pace in a race Hamilton won by 19.6 s, because Leclerc had a much slower race.
 
 | | |
 |---|---|
-| Barcelona | Hamilton's Ferrari fastest; Russell's Mercedes +0.16 ± 0.07 s a lap, Antonelli +0.23, Norris +0.29, Verstappen +0.43, Leclerc +0.62. Russell was 0.07 s quicker than Hamilton through sector 1 and lost 0.18 s in sector 2. |
-| Traffic | Running within 1 s of the car ahead cost 0.20 ± 0.04 s a lap, 0.15 s of it in sector 2 (Turns 4–9); between 1 and 2 s it cost nothing measurable. 41% of green laps had a car within 1.5 s at some point, so the term is fitted rather than those laps dropped. |
+| Barcelona | Hamilton and Russell level within the uncertainty: Russell +0.03 ± 0.17 s a lap, Antonelli +0.16, Norris +0.21, Verstappen +0.40, Leclerc +0.50 (all ± 0.17 s), at a tyre age of 9 laps on the Hard. An earlier version said Russell +0.16 ± 0.07: it gave every car the same wear rate and treated laps as independent, and the identifiability bench showed its intervals 2.7–3.7 times too narrow (see [docs/limits.md](docs/limits.md)). |
+| Traffic | Running within 1 s of the car ahead cost 0.19 ± 0.05 s a lap; between 1 and 2 s it cost nothing measurable. 41% of green laps had a car within 1.5 s at some point, so the term is fitted rather than those laps dropped. |
 | Held-out laps | Fitted on odd laps, the model predicts even-lap times to 0.29 s (median error), against 0.71 s for each car's own median lap. |
-| Test bench | A synthetic race with known sector gaps, tyre, fuel and traffic effects, noise and wrecked laps: every car's gap in every sector recovered within 0.03 s (tolerance 0.06). |
+| Test bench | A synthetic race with known sector gaps, tyre, fuel and traffic effects, noise and wrecked laps: every car's gap in every sector recovered within the tolerance (0.06 s). |
+| Identifiability bench | On a 20-car synthetic field with car-specific wear and stint offsets as large as Barcelona's, the 95% intervals on sector and lap gaps hold the truth 93–95% of the time, with errors 1.03–1.05 times the stated uncertainty. |
 | Grip in dirty air | Refitted on laps with no car within 1.5 s ahead, fast-corner grip moves at most 0.5 points; the largest move against its uncertainty is Haas in slow corners (0.9 points, 2.8 standard errors), shown as a warning. |
 
 ## Quick start
@@ -140,6 +147,7 @@ uv venv --python 3.12 && uv pip install -e ".[dev]"
 .venv/bin/parc-ferme check 11307      # data checks + warm-up analyses, written to reports/11307/
 .venv/bin/parc-ferme sim 11307        # nominal 2026 car on the minimum-time line vs Hamilton's best lap
 .venv/bin/parc-ferme grip 11307       # S3: grip per team, the fitted field car, driven distance per section
+.venv/bin/parc-ferme bench            # identifiability bench: every stated uncertainty against synthetic truth (~3 min)
 .venv/bin/parc-ferme debrief 11307    # the session's workstation, built into _site/ (refused if a gating check fails)
 .venv/bin/parc-ferme site             # rebuild _site/ from every debrief already built
 .venv/bin/parc-ferme publish          # rebuild _site/ and push it to gh-pages (GitHub Pages)
