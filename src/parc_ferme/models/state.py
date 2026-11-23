@@ -11,6 +11,11 @@ BANDWIDTH_S = .30
 
 
 def fuel(t, throttle, rpm, duration):
+    kg, coverage, _ = estimate_fuel(t, throttle, rpm, duration)
+    return kg, coverage
+
+
+def estimate_fuel(t, throttle, rpm, duration, *, with_profile=False):
     """Integrate assumed load maps against the FIA RPM ceiling, clipping segments at the timing lines."""
     mass = rules()["mass"]
     full = mass["fuel_energy_flow_mj_per_h"]
@@ -30,13 +35,54 @@ def fuel(t, throttle, rpm, duration):
     span = (right-left)[ok]
     covered = span.sum()
     if covered < MIN_COVERAGE*duration or covered == 0:
-        return None, float(covered/duration)
+        return None, float(covered/duration), None
     mid = ((left[ok]+right[ok])/2 - t[:-1][ok]) / delta[ok]
     kg = ((rates[:, :-1][:, ok] + np.diff(rates)[:, ok]*mid) * span).sum(axis=1)
     # Unobserved time permits zero to maximum flow. The centre uses the observed time average.
     kg[1] *= duration/covered
     kg[2] += max(0., duration-covered)*full/3600/41
-    return kg, float(covered/duration)
+    profile = None
+    if with_profile:
+        slope = np.diff(rates[1])[ok] / delta[ok]
+        first_rate = rates[1, :-1][ok] + slope * (left[ok] - t[:-1][ok])
+        profile = _fuel_profile(left[ok], span, first_rate, slope, duration, kg[1]/duration)
+    return kg, float(covered/duration), profile
+
+
+def _fuel_profile(left, span, first_rate, slope, duration, mean_rate):
+    """Integrate the same linear flow segments at one-second boundaries, including the final partial second."""
+    edges = np.r_[np.arange(0., duration), duration]
+    mass = span * (first_rate + .5*slope*span)
+    count = np.searchsorted(left + span, edges, side="right")
+    i = np.minimum(count, len(left)-1)
+    partial = np.where(count == len(left), 0., np.clip(edges-left[i], 0., span[i]))
+    observed_time = np.r_[0., np.cumsum(span)][count] + partial
+    observed_kg = np.r_[0., np.cumsum(mass)][count] + partial*(first_rate[i] + .5*slope[i]*partial)
+    unobserved = edges-observed_time
+    # The lap estimate assigns its observed mean flow to unsupported time. Hide rates for those bins.
+    cumulative_mg = np.rint(1e6*(observed_kg + mean_rate*unobserved)).astype(int)
+    return {"mg": np.diff(cumulative_mg).tolist(), "missing": np.flatnonzero(np.diff(unobserved) > 1e-6).tolist()}
+
+
+MAX_BRIDGE_S = 2.
+
+
+def gap_bridges(t, speed_kph, accel):
+    """Fit a quadratic G curve joining the displayed flanks and integrating to the observed speed change.
+
+    With equally spaced Bézier controls (g0, c, g1), mean g is (g0+c+g1)/3.
+    Store the flank indices and middle control ordinate. The control is not a point on the trace.
+    """
+    supported = np.flatnonzero(np.isfinite(accel))
+    left, right = supported[:-1], supported[1:]
+    duration = t[right]-t[left]
+    keep = (right > left+1) & (duration > 0) & (duration <= MAX_BRIDGE_S)
+    bridges = []
+    for a, b, dt in zip(left[keep], right[keep], duration[keep], strict=True):
+        mean_g = (speed_kph[b]-speed_kph[a]) / (3.6*G*dt)
+        g0, g1 = np.rint(100*accel[[a, b]])/100
+        bridges.append([int(a), int(b), round(float(3*mean_g - g0 - g1), 5)])
+    return bridges
 
 
 @njit(cache=True)

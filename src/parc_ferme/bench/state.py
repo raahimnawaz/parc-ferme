@@ -1,13 +1,13 @@
 """S5 blind lap audit. Fit calibration widths on a separate bank of cars from the published check."""
 
 import numpy as np
-from scipy.integrate import trapezoid
+from scipy.integrate import cumulative_trapezoid, trapezoid
 
 from ..core.car import G
-from ..models.state import fuel, interval, smooth
+from ..models.state import estimate_fuel, gap_bridges, interval, smooth
 
 
-def trial(seed):
+def trial(seed, *, profile_checks=False):
     rng = np.random.default_rng(seed)
     # Flat approaches, power-limited exits and short hard braking events, with smooth onset and release.
     steps = []
@@ -52,7 +52,8 @@ def trial(seed):
     idle = rng.uniform(0, .055)
     load = idle+(utilisation-idle)*throttle**exponent
     load *= np.where(rpm > 12550, rng.uniform(.65, 1.), 1.)
-    actual = trapezoid(np.minimum(3000., 165+.27*rpm)*load, t)/3600/rng.uniform(41, 45)
+    true_flow = np.minimum(3000., 165+.27*rpm)*load/3600/rng.uniform(41, 45)
+    actual = trapezoid(true_flow, t)
     ticks = np.cumsum(rng.uniform(.17, .32, int(start/.17)))
     ticks = ticks[(ticks < t[-1]) & (rng.random(len(ticks)) > .035)]
     hole = rng.uniform(1, start-3)
@@ -60,7 +61,8 @@ def trial(seed):
     v = np.round(3.6*np.interp(ticks, t, speed)+rng.normal(0, .45, len(ticks)))
     pedal = np.rint(100*np.interp(ticks, t, throttle))
     pedal[rng.random(len(ticks)) < .002] = 104
-    kg, _ = fuel(ticks, pedal, np.round(np.interp(ticks, t, rpm)), t[-1])
+    kg, _, profile = estimate_fuel(ticks, pedal, np.round(np.interp(ticks, t, rpm)), t[-1],
+                                   with_profile=profile_checks)
     score = np.nan
     err = np.nan
     if kg is not None:
@@ -71,7 +73,27 @@ def trial(seed):
     valid = np.isfinite(fitted)
     truth = np.interp(ticks, t, accel)/G
     central = np.r_[np.nan, (v[2:]-v[:-2])/(ticks[2:]-ticks[:-2])/3.6/G, np.nan]
-    return score, err, fitted[valid]-truth[valid], fitted[valid], truth[valid], central[valid]-truth[valid], kg, actual
+    checks = {}
+    if profile_checks:
+        q = (np.arange(20)+.5)/20
+        checks["gap_g"] = []
+        checks["linear_g"] = []
+        for i, j, control in gap_bridges(ticks, v, fitted):
+            g0, g1 = np.rint(100*fitted[[i, j]])/100
+            true_g = np.interp(ticks[i]+q*(ticks[j]-ticks[i]), t, accel)/G
+            curve = (1-q)**2*g0 + 2*q*(1-q)*control + q**2*g1
+            checks["gap_g"].extend(np.abs(curve-true_g))
+            checks["linear_g"].extend(np.abs((1-q)*g0+q*g1-true_g))
+        if profile:
+            edges = np.r_[np.arange(0., t[-1]), t[-1]]
+            true_mass = np.interp(edges, t, cumulative_trapezoid(true_flow, t, initial=0))
+            error_kg = np.array(profile["mg"])/1e6 - np.diff(true_mass)
+            ok = np.ones(len(error_kg), dtype=bool)
+            ok[profile["missing"]] = False
+            checks["flow"] = np.abs(1000*error_kg[ok]/np.diff(edges)[ok])
+            checks["used"] = np.abs(np.cumsum(error_kg))
+    return (score, err, fitted[valid]-truth[valid], fitted[valid], truth[valid],
+            central[valid]-truth[valid], checks, kg, actual)
 
 
 def run(quick=False):
@@ -85,7 +107,7 @@ def run(quick=False):
     def errors(runs, braking):
         return np.concatenate([r[2][(r[3] < 0) == braking] for r in runs])
 
-    audit = [trial(i+72000) for i in range(m)]
+    audit = [trial(i+72000, profile_checks=True) for i in range(m)]
     scored = [r for r in audit if np.isfinite(r[0])]
     phases = {}
     for braking, name in [(False, "acceleration"), (True, "deceleration")]:
@@ -98,7 +120,12 @@ def run(quick=False):
     covered = sum(r[0] <= scale for r in scored)
     fuel_sd_z = float(np.std([np.sign(r[1])*1.96*r[0]/scale for r in scored], ddof=1))
     peak_errors = [np.min(r[3])-np.min(r[4]) for r in audit]
-    return dict(calibration_laps=n, audit_laps=m, fuel_scale=scale, fuel_sd_z=fuel_sd_z,
+    def profile_error(key):
+        values = np.concatenate([r[6][key] for r in audit if key in r[6]])
+        return {"n": len(values), "mae": float(np.mean(values))}
+
+    return dict(profile_checks={key: profile_error(key) for key in ("flow", "used", "gap_g", "linear_g")},
+                calibration_laps=n, audit_laps=m, fuel_scale=scale, fuel_sd_z=fuel_sd_z,
                 fuel_scored=len(scored), fuel_covered=int(covered),
                 fuel_coverage=covered/len(scored), fuel_mae_kg=float(np.mean([abs(r[1]) for r in scored])),
                 phases=phases, median_peak_braking_attenuation_g=float(np.median(peak_errors)),

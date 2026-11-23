@@ -107,7 +107,7 @@ the code version.
 | Lap analysis | Any two cars' fastest or typical laps against distance: speed, time gap, throttle, brake, gear and engine speed, under a strip of sectors, corners and straight-mode zones. A track map coloured by who was faster in each of 25 mini-sectors, the lap summary in timing-screen colours, and a reference cursor that measures any stretch. The lap sim's car for car A's team can be overlaid, with its energy channels. |
 | Race pace | Time lost per lap to the fastest car, sector by sector, and the cost of running in traffic. |
 | Car model | The sim car's parameters, where each comes from (rules, measured, fitted or nominal) and the lap-time effect of +1% on each; cornering grip by team. |
-| Fuel & acceleration | Per-driver fuel burn, mass-only time gain and signed longitudinal acceleration for each timed lap. Select a lap from the fuel plot to inspect its acceleration and uncertainty. |
+| Fuel & acceleration | Select a driver's full race, tyre stint or custom lap range to see cumulative fuel and lap-average burn rate. Open a lap for one-second rates, the mass-only time gain and signed acceleration. Dark dashed G curves join short gaps, constrained by the measured speed change. |
 | Model health | Data checks and interval coverage for grip and race pace. The Energy and drag card compares independent and linked laps, with bench coverage and exit-speed error on held-out blocks. |
 
 Distance is corrected distance, as MoTeC and ATLAS build it: speed integrated over the lap and scaled to the lap

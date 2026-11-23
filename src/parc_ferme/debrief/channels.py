@@ -36,6 +36,14 @@ def grid(length_m: float, dx: float = DX_M) -> np.ndarray:
     return np.arange(0.0, length_m, dx)
 
 
+def distance_clock(t, speed_kph, duration):
+    """Cumulative distance and elapsed time at the timing lines and interior speed samples."""
+    inside = (t > 0) & (t < duration)
+    tt = np.r_[0., t[inside], duration]
+    v = np.interp(tt, t, speed_kph) / 3.6
+    return np.r_[0., np.cumsum(.5*(v[1:] + v[:-1])*np.diff(tt))], tt
+
+
 def lap_grid(car_data: pd.DataFrame, laps: pd.DataFrame, length_m: float, dx: float = DX_M) -> dict:
     """Every green lap's channels on the distance grid, keyed (driver, lap number), with its timing. `t` is the
     time into the lap [s]."""
@@ -52,10 +60,7 @@ def lap_grid(car_data: pd.DataFrame, laps: pd.DataFrame, length_m: float, dx: fl
         if len(c) < MIN_SAMPLES:
             continue
         tc = (c.date - w.date_start).dt.total_seconds().to_numpy()
-        inside = (tc > 0) & (tc < w.lap_time)
-        tt = np.r_[0.0, tc[inside], w.lap_time]
-        v = np.interp(tt, tc, c.speed.to_numpy(float)) / 3.6
-        dist = np.r_[0.0, np.cumsum(0.5 * (v[1:] + v[:-1]) * np.diff(tt))]
+        dist, tt = distance_clock(tc, c.speed.to_numpy(float), w.lap_time)
         if dist[-1] <= 0:
             continue
         xx = dist / dist[-1] * length_m

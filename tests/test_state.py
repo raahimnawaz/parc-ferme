@@ -1,8 +1,9 @@
 import numpy as np
 import pytest
+from scipy.integrate import trapezoid
 
 from parc_ferme.bench import state as bench
-from parc_ferme.models.state import fuel, interval, smooth
+from parc_ferme.models.state import estimate_fuel, fuel, gap_bridges, interval, smooth
 
 
 def test_fuel_clips_timing_lines_and_obeys_rpm_ceiling():
@@ -44,6 +45,9 @@ def test_smoother_recovers_signed_acceleration_and_breaks_at_gaps():
 def test_state_bench_covers_hidden_truth_and_reports_peak_bias():
     result = bench.run(quick=True)
     assert result["passed"] and result["fuel_scored"] >= .9*result["audit_laps"]
+    checks = result["profile_checks"]
+    assert checks["flow"]["mae"] < 3. and checks["used"]["mae"] < .15
+    assert checks["gap_g"]["n"] > 0 and checks["gap_g"]["mae"] < checks["linear_g"]["mae"]
     for phase in result["phases"].values():
         assert phase["mae_g"] < phase["central_mae_g"]
     assert 0 < result["median_peak_braking_attenuation_g"] < .5
@@ -61,3 +65,39 @@ def test_held_speed_prediction_is_exact_at_constant_acceleration():
     v = 220 - 12*t
     residuals, baseline = held_speed_errors(t, v)
     assert len(residuals) > 0 and np.allclose(residuals, 0) and np.allclose(baseline, 0)
+
+def test_fuel_bins_integrate_a_ramp_at_the_lines_and_keep_the_partial_second():
+    t = np.arange(-.25, 3., .25)
+    duration = 2.35
+    kg, coverage, p = estimate_fuel(t, 30+10*t, np.full(len(t), 11000.), duration, with_profile=True)
+    edges = np.array([0., 1., 2., duration])
+    primitive = 3000/3600/43*((.015+.935*.30)*edges + .5*.935*.1*edges**2)
+    assert coverage == pytest.approx(1.)
+    assert p["missing"] == []
+    assert np.cumsum(p["mg"])/1e6 == pytest.approx(primitive[1:], abs=.5e-6)
+    assert sum(p["mg"])/1e6 == pytest.approx(kg[1], abs=.5e-6)
+
+
+def test_fuel_profile_masks_missing_flow_and_keeps_supported_lap_total():
+    t = np.arange(0, 20.25, .25)
+    pedal = np.full(len(t), 80)
+    pedal[t == 8.] = 104
+    kg, _, p = estimate_fuel(t, pedal, np.full(len(t), 9820.), 20., with_profile=True)
+    assert p["missing"] == [7, 8]
+    assert sum(p["mg"])/1e6 == pytest.approx(kg[1], abs=.5e-6)
+    assert min(p["mg"]) >= 0
+    pedal[(t > 9) & (t < 12)] = 104
+    assert estimate_fuel(t, pedal, np.full(len(t), 9820.), 20., with_profile=True)[2] is None
+
+
+def test_short_gap_curve_meets_both_flanks_and_integrates_to_measured_speed_change():
+    t = np.array([0., .25, .5, 1., 2.25, 2.5, 5., 5.25, 5.5])
+    speed = np.array([180., 177., 176., 135., 110., 109., 100., 100., 100.])
+    # A 2 s gap, a longer gap and open lap ends. Only the first has eligible endpoints.
+    accel = np.array([np.nan, .1, np.nan, np.nan, -.1, np.nan, np.nan, -.2, np.nan])
+    ((i, j, c),) = gap_bridges(t, speed, accel)
+    assert (i, j) == (1, 4)
+    q = np.linspace(0, 1, 1001)
+    curve = (1-q)**2*accel[i] + 2*q*(1-q)*c + q**2*accel[j]
+    assert curve[[0, -1]] == pytest.approx(accel[[i, j]])
+    assert trapezoid(curve, q)*(t[j]-t[i])*9.81*3.6 == pytest.approx(speed[j]-speed[i], abs=.001)

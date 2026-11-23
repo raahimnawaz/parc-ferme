@@ -343,3 +343,20 @@ which withholds every seventh measured speed. That speed check does not observe 
 acceleration. Dashboard and JSON results are built by `parc-ferme debrief 11307`;
 `state_fit.drivers` contains the burn and mass-only gain intervals (low, centre, high),
 lap coverage and the smoother traces (elapsed milliseconds, signed hundredths of g).
+
+The fuel workspace accumulates estimated mass from the first lap of the selected range.
+Opening a lap keeps that origin. The overview reports each lap's mass divided by its
+timed duration. Lap detail integrates the same flow model at one-second boundaries
+and preserves the last partial second. A bin containing unsupported time has no rate
+on the plot. The cumulative curve uses the same mean-flow allowance as the lap total.
+An unsupported whole lap is excluded from the explicitly labelled covered-lap subtotal.
+The 95% interval applies to a lap total. For the profile, the blind bench checks mean
+absolute error in one-second flow and cumulative mass since the start of each lap.
+
+A darker dashed curve joins the two smoothed G values around an internal gap of
+up to 2 seconds. Its integral equals the observed change in speed divided by gravity.
+The quadratic Bézier curve with those three constraints is unique. The hover value
+follows the same curve. The band on the solid trace ends at the gap. Longer gaps and
+lap boundaries stay open. The blind bench checks the interior against hidden true
+acceleration at 20 points per gap and compares with linear interpolation. The dashed
+curve estimates the shape. Individual braking peaks inside a dropout remain uncertain.

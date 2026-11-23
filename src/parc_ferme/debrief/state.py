@@ -6,8 +6,9 @@ import numpy as np
 import pandas as pd
 
 from ..bench import state as bench
-from ..models.state import MAX_GAP_S, fuel, interval, smooth
+from ..models.state import MAX_BRIDGE_S, MAX_GAP_S, estimate_fuel, gap_bridges, interval, smooth
 from ..sim.lapsim import simulate
+from .channels import distance_clock
 
 
 def held_speed_errors(t, v):
@@ -49,7 +50,8 @@ def study(car_data, laps, model, car, car_model):
         for lap in group.sort_values("lap_number").itertuples():
             number = int(lap.lap_number)
             flags = ("pit in" if lap.pit_in else "pit out" if lap.pit_out else "green" if lap.green else "other")
-            row = dict(lap=number, phase=flags, burn=None, gain_ms=None, start_gain_s=None, trace=None)
+            row = dict(lap=number, stint=int(lap.stint_number), compound=str(lap.compound), phase=flags,
+                       burn=None, gain_ms=None, start_gain_s=None, trace=None)
             rows.append(row)
             if number != previous+1:
                 cumulative = np.nan
@@ -59,6 +61,7 @@ def study(car_data, laps, model, car, car_model):
                 row["status"] = "No complete timing"
                 continue
             timed += 1
+            row["duration_ms"] = round(float(lap.lap_time)*1000)
             if g is None:
                 cumulative = np.nan
                 row["status"] = "No car data"
@@ -68,14 +71,15 @@ def study(car_data, laps, model, car, car_model):
                                                start+pd.Timedelta(microseconds=round(1e6*(duration+MAX_GAP_S)))])
             c = g.iloc[left:right]
             t = (c.date-start).dt.total_seconds().to_numpy()
-            kg, coverage = fuel(t, c.throttle.to_numpy(), c.rpm.to_numpy(), duration)
+            kg, coverage, profile = estimate_fuel(t, c.throttle.to_numpy(), c.rpm.to_numpy(), duration,
+                                                  with_profile=True)
             row["coverage"] = coverage
             if kg is None:
                 cumulative = np.nan
                 row["status"] = "Insufficient throttle/RPM coverage"
             else:
                 burn = interval(kg, audit["fuel_scale"])
-                row.update(burn=burn, gain_ms=interval(np.asarray(burn)*1000*slope, effect["factor"]),
+                row.update(profile=profile, burn=burn, gain_ms=interval(np.asarray(burn)*1000*slope, effect["factor"]),
                            start_gain_s=None if not np.isfinite(cumulative) else slope*cumulative)
                 cumulative += burn[1]
                 estimated += 1
@@ -88,6 +92,13 @@ def study(car_data, laps, model, car, car_model):
                 # Missing values at the ends of each observed segment break the displayed line.
                 row["trace"] = dict(ms=np.rint(1000*ti).astype(int).tolist(),
                                     cg=[int(round(100*a)) if np.isfinite(a) else None for a in accel])
+                row["trace"]["bridges"] = gap_bridges(ti, v, accel)
+                if (lap.green and np.max(np.diff(t)) <= MAX_BRIDGE_S and t[0] <= MAX_GAP_S
+                        and t[-1] >= duration-MAX_GAP_S and np.isfinite(c.speed).all()):
+                    dist, times = distance_clock(t, c.speed.to_numpy(float), duration)
+                    if dist[-1] > 0:
+                        fractions = [f for _, f in sorted(model.corner_fraction.items())]
+                        row["corner_ms"] = np.rint(1000*np.interp(fractions, dist/dist[-1], times)).astype(int).tolist()
                 err, base = held_speed_errors(ti, v)
                 errors.extend(err)
                 baseline_errors.extend(base)

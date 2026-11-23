@@ -15,7 +15,7 @@ from ..debrief.build import to_json
 
 REPO_URL = "https://github.com/raahimnawaz/parc-ferme"
 STATIC = Path(__file__).parent / "static"
-ASSETS = ("dash.css", "dash.js")
+ASSETS = ("dash.css", "dash.js", "fuel.js")
 FONTS = ("https://fonts.googleapis.com/css2?family=Saira:wdth,wght@100..125,300..500"
          "&family=Martian+Mono:wdth,wght@75..112.5,300..400&display=swap")
 UPLOT_CSS = ("https://cdn.jsdelivr.net/npm/uplot@1.6.32/dist/uPlot.min.css",
@@ -483,24 +483,37 @@ def state_workspace(d: dict) -> str:
         return ""
     codes = list(dict.fromkeys([*car_order(d), *fit["drivers"]]))
     options = "".join(f'<option value="{e(c)}">{e(c)}</option>' for c in codes if c in fit["drivers"])
-    checks = fit["mass_checks"].values()
     return f"""<section class="ws" id="ws-state" hidden>
     <div class="toolbar"><label class="sel"><span>Driver</span><select id="s5-driver">{options}</select></label>
-    <label class="sel"><span>Lap</span><select id="s5-lap"></select></label></div>
-    <div class="card"><div class="card-h"><span>Estimated fuel burn · kg per lap</span>
-    <span class="dim">Shading · model-based 95% interval</span></div><div id="s5-fuel-chart"></div>
-    <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Selected lap</th><th class="n">Fuel burned</th>
-    <th class="n">Mass-only lap-time gain</th><th class="n">Gain at lap start vs race start</th></tr></thead>
-    <tbody id="s5-lap-values"></tbody></table></div>
-    <p class="dim">Fuel estimates cover {fit["estimated_laps"]:,} of {fit["timed_laps"]:,} timed car-laps.
-    Throttle and RPM estimate fuel flow. The fitted car gains {1000*fit["mass_s_per_kg"]:.1f} ms
-    per kg removed at the reference load. Checks at 5, 35 and 60 kg fuel span
-    {1000*min(checks):.1f}–{1000*max(checks):.1f} ms/kg.
-    Gain intervals include both fuel-map uncertainty and the mass-response error on the bench.</p></div>
+    <div class="seg"><button id="s5-race">Full race</button></div>
+    <label class="sel"><span>Zoom</span><select id="s5-lap" aria-label="Zoom to lap"></select></label></div>
+    <div class="card"><div class="card-h"><span>Tyre stints</span>
+    <span class="dim">Select a stint or drag across laps</span></div>
+    <div id="s5-stints" role="group" aria-label="Select laps on the race timeline"></div>
+    <div id="s5-selection" class="dim"></div></div>
+    <div class="card s5-readings"><div class="card-h"><span id="s5-at"></span>
+    <span class="dim" id="s5-coverage"></span></div>
+    <dl class="s5-values">
+    <div><dt id="s5-used-label">Fuel used so far</dt><dd id="s5-used"></dd></div>
+    <div><dt id="s5-rate-label">Mean burn rate</dt><dd id="s5-rate"></dd></div>
+    <div><dt id="s5-lap-label">Fuel this lap</dt><dd id="s5-lap-used"></dd></div>
+    <div><dt id="s5-g-label">Longitudinal G</dt><dd id="s5-g"></dd></div></dl></div>
+    <div class="card"><div class="card-h"><span>Estimated fuel used · kg</span>
+    <span class="dim" id="s5-origin"></span></div>
+    <div id="s5-fuel-chart"></div></div>
+    <div class="card"><div class="card-h"><span>Estimated burn rate · g/s</span>
+    <span class="dim" id="s5-rate-note"></span></div><div id="s5-rate-chart"></div></div>
     <div class="card"><div class="card-h"><span>Longitudinal acceleration · g</span>
-    <span class="dim">Elapsed lap time · negative values indicate deceleration</span></div>
-    <div id="s5-accel-chart"></div><p class="dim">Signed acceleration from a local fit to irregular speed samples.
-    Shading gives pointwise 95% intervals from the synthetic bench. Gaps mark unsupported samples.</p></div>
+    <span class="dim"><i class="s5-dash"></i> Estimated G across gaps up to 2 s</span></div>
+    <div id="s5-accel-chart"></div><p class="dim">Shading gives the pointwise 95% interval on the smoothed trace.
+    Dashed curves join the surrounding G estimates and integrate to the measured change in speed.</p></div>
+    <div class="card"><div class="card-h"><span>Lap fuel estimate</span><span class="dim" id="s5-typical"></span></div>
+    <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Lap</th><th class="n">Fuel used · 95% range</th>
+    <th class="n">Lap-time gain from fuel used · 95% range</th><th class="n">Gain at lap start vs race start</th></tr>
+    </thead><tbody id="s5-lap-values"></tbody></table></div>
+    <p class="dim">Throttle and RPM estimate fuel flow. Each kilogram removed is worth
+    {1000*fit["mass_s_per_kg"]:.1f} ms per lap on the fitted car at its reference load. The 95% fuel range applies to a
+    whole lap. Within a supported lap the cumulative estimate assigns its mean flow to missing time.</p></div>
     </section>"""
 
 
@@ -517,6 +530,13 @@ def state_health(d: dict) -> str:
         f'With every seventh speed sample withheld, mean absolute speed error was {held:.2f} km/h '
         f'on {fit["held_speed_samples"]:,} supported observations. Linear interpolation gave '
         f'{fit["held_linear_mae_kph"]:.2f} km/h on those observations.')
+    profile_check = ""
+    if checks := audit.get("profile_checks"):
+        profile_check = (f'<p class="dim">On the blind synthetic laps, the one-second burn rate averaged '
+                         f'{checks["flow"]["mae"]:.2f} g/s absolute error. Fuel used since lap start averaged '
+                         f'{checks["used"]["mae"]:.3f} kg absolute error. Inside masked speed gaps, the dashed G curve '
+                         f'averaged {checks["gap_g"]["mae"]:.3f} g absolute error. A straight line between the same '
+                         f'endpoints gave {checks["linear_g"]["mae"]:.3f} g.</p>')
     return f"""<div class="card"><div class="card-h"><span>Fuel and acceleration checks</span>
       <span class="dim">{audit["calibration_laps"]} calibration laps · {audit["audit_laps"]} blind synthetic laps</span>
       </div><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Quantity</th>
@@ -530,7 +550,7 @@ def state_health(d: dict) -> str:
       <td class="n">{phases["acceleration"]["mae_g"]:.3f} g</td></tr>
       <tr><td>Deceleration samples</td><td class="n">{phases["deceleration"]["coverage"]:.1%}</td>
       <td class="n">{phases["deceleration"]["mae_g"]:.3f} g</td></tr></tbody></table></div>
-      <p class="dim">{speed_check} Peak braking was attenuated by a median
+      {profile_check}<p class="dim">{speed_check} Peak braking was attenuated by a median
       {audit["median_peak_braking_attenuation_g"]:.2f} g on the bench. The feed lacks a fuel-flow channel.</p></div>"""
 
 
@@ -588,6 +608,7 @@ def page(d: dict) -> str:
 {_footer(d["code"])}
 <div class="tip" id="tip" hidden></div>
 <script id="data" type="application/json">{page_data(d)}</script>
+{f'<script src="{_asset("fuel.js", prefix)}"></script>' if state_panel else ""}
 <script src="{_asset('dash.js', prefix)}"></script>
 </body></html>
 """
