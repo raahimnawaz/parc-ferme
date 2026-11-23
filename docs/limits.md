@@ -290,3 +290,56 @@ endpoints and rollouts to `reports/11307/`. In `energy_linked_balance.csv`, each
 records the sequence, start and end charge, and recovered and spent energy for **one
 feasible history**. `energy_lap_balance.csv` retains the independent-lap phase limits at
 the representative drag. The fit, split and exclusions are in `energy_fit.json`.
+
+### S5 fuel and longitudinal acceleration
+
+Each timed lap is cut at the timing lines. S5 integrates the RPM-dependent maximum fuel
+energy flow against an assumed load map, then divides by fuel lower heating value.
+The maximum is 3,000 MJ/h at 10,500 rpm and above and 0.27 × rpm + 165 MJ/h below.
+The partial-load rule also depends on engine power, which OpenF1 lacks. Actual fuel flow,
+the ECU map and each supplier's energy density are unobserved.
+[FIA Section C, Issue 17, articles C5.2.3–6](https://www.fia.com/system/files/documents/fia_2026_f1_regulations_-_section_c_technical_-_iss_17_-_2026-04-28.pdf)
+
+The central map uses 1.5% of the RPM ceiling at closed throttle and 95% at full throttle,
+linear between them, with a nominal 43 MJ/kg fuel. Scenario maps use 41–45 MJ/kg and
+vary the part-load shape, maximum flow and overrun fueling. A stopped engine consumes zero
+in the model. Invalid pedal codes and spans over 0.8 s are missing. A lap needs direct
+coverage of at least 95% of its duration. The centre fills short missing periods at the
+observed mean; the scenario limits allow zero through maximum flow during those periods.
+
+At Barcelona the model returned estimates on 1,224 of 1,234 timed car-laps. The median
+of the 1,045 supported green car-laps was 0.896 kg. The fitted car at 20 kg fuel gives
+0.02768 s/kg from its +1% mass test, or a 24.8 ms gain from that typical burn, all else
+equal. Five-kilogram perturbations starting at 5, 35 and 60 kg give 0.02637–0.02823 s/kg.
+The gain at lap start accumulates previous burn relative to the first timing line and
+is withheld after any missing lap estimate. It is a first-order mass-only effect.
+The pace estimator continues to fit the common race-lap trend shared by fuel and track
+evolution. The race results do not independently identify absolute fuel mass.
+
+Signed longitudinal acceleration is the slope of a local constant-acceleration model of
+speed, in clock time. The Gaussian weighting bandwidth is 0.30 s, shortened to 0.16 s
+when the weighted speed residual exceeds 0.20 m/s RMS. Each estimate requires samples
+on both sides in the same uninterrupted segment. A gap over 0.8 s breaks the trace.
+The brake flag supplies no quantitative input. The output measures rate of change of
+road speed, including on grades. Brake pressure and lateral acceleration are outside
+this channel.
+
+`parc-ferme bench --state-only` checks fuel and signed acceleration. The synthetic laps
+vary the hidden load map, fuel properties, shifts, low-load periods and braking onset
+and release. The renderer jitters sample times, rounds speed, drops packets, inserts
+outages and invalidates occasional pedal samples. Calibration uses 200 laps. A separate
+300-lap audit checks fuel once per supported lap and acceleration pointwise, by sign.
+The fuel interval covered 282/299 scored laps, with 0.126 kg mean absolute error.
+Acceleration and deceleration coverage were both 95.2%, with mean absolute errors
+of 0.027 g and 0.085 g. The raw central difference gave 0.038 g and 0.091 g on the same
+samples. The pointwise bands do not describe uncertainty on a lap's maximum braking.
+
+The debrief also calibrates the time-gain interval with 80 paired lap simulations on the
+session's fitted car and audits another 160 cases. Each comparison runs the same line
+at a hidden fuel load of 5–65 kg, then removes the known synthetic burn. This checks
+the local seconds-per-kilogram approximation and fuel inference together, conditional on
+the car model. Model health reports both audit results and a separate Barcelona check
+which withholds every seventh measured speed. That speed check does not observe true
+acceleration. Dashboard and JSON results are built by `parc-ferme debrief 11307`;
+`state_fit.drivers` contains the burn and mass-only gain intervals (low, centre, high),
+lap coverage and the smoother traces (elapsed milliseconds, signed hundredths of g).

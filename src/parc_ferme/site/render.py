@@ -167,6 +167,9 @@ def page_data(d: dict) -> str:
             "cars": {c: {**d["cars"][c], **t["laps"][c]} for c in car_order(d)},
             "best": t["best"], "sims": t["sims"],
             "adjusted": {r["driver"]: [r["lap"], r["lap_se"]] for r in d["pace"]["cars"]}}
+    fit = d.get("state_fit")
+    if fit and fit["audit"]["passed"] and fit["effect_audit"]["passed"]:
+        data["stateFit"] = {"drivers": fit["drivers"], "phases": fit["audit"]["phases"]}
     return to_json(data).replace("<", "\\u003c")
 
 
@@ -474,6 +477,63 @@ def energy_card(d: dict) -> str:
       {speed["local_speed_gain"]["mae_kph"]:.2f} km/h. {e(fit["split"])}.</p></div>"""
 
 
+def state_workspace(d: dict) -> str:
+    fit = d.get("state_fit")
+    if not fit or not fit["audit"]["passed"] or not fit["effect_audit"]["passed"]:
+        return ""
+    codes = list(dict.fromkeys([*car_order(d), *fit["drivers"]]))
+    options = "".join(f'<option value="{e(c)}">{e(c)}</option>' for c in codes if c in fit["drivers"])
+    checks = fit["mass_checks"].values()
+    return f"""<section class="ws" id="ws-state" hidden>
+    <div class="toolbar"><label class="sel"><span>Driver</span><select id="s5-driver">{options}</select></label>
+    <label class="sel"><span>Lap</span><select id="s5-lap"></select></label></div>
+    <div class="card"><div class="card-h"><span>Estimated fuel burn · kg per lap</span>
+    <span class="dim">Shading · model-based 95% interval</span></div><div id="s5-fuel-chart"></div>
+    <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Selected lap</th><th class="n">Fuel burned</th>
+    <th class="n">Mass-only lap-time gain</th><th class="n">Gain at lap start vs race start</th></tr></thead>
+    <tbody id="s5-lap-values"></tbody></table></div>
+    <p class="dim">Fuel estimates cover {fit["estimated_laps"]:,} of {fit["timed_laps"]:,} timed car-laps.
+    Throttle and RPM estimate fuel flow. The fitted car gains {1000*fit["mass_s_per_kg"]:.1f} ms
+    per kg removed at the reference load. Checks at 5, 35 and 60 kg fuel span
+    {1000*min(checks):.1f}–{1000*max(checks):.1f} ms/kg.
+    Gain intervals include both fuel-map uncertainty and the mass-response error on the bench.</p></div>
+    <div class="card"><div class="card-h"><span>Longitudinal acceleration · g</span>
+    <span class="dim">Elapsed lap time · negative values indicate deceleration</span></div>
+    <div id="s5-accel-chart"></div><p class="dim">Signed acceleration from a local fit to irregular speed samples.
+    Shading gives pointwise 95% intervals from the synthetic bench. Gaps mark unsupported samples.</p></div>
+    </section>"""
+
+
+def state_health(d: dict) -> str:
+    fit = d.get("state_fit")
+    if not fit:
+        return ""
+    audit = fit["audit"]
+    if not audit["passed"] or not fit["effect_audit"]["passed"]:
+        return '<div class="card">S5 interval coverage check failed.</div>'
+    phases = audit["phases"]
+    held = fit["held_speed_mae_kph"]
+    speed_check = "" if held is None else (
+        f'With every seventh speed sample withheld, mean absolute speed error was {held:.2f} km/h '
+        f'on {fit["held_speed_samples"]:,} supported observations. Linear interpolation gave '
+        f'{fit["held_linear_mae_kph"]:.2f} km/h on those observations.')
+    return f"""<div class="card"><div class="card-h"><span>Fuel and acceleration checks</span>
+      <span class="dim">{audit["calibration_laps"]} calibration laps · {audit["audit_laps"]} blind synthetic laps</span>
+      </div><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Quantity</th>
+      <th class="n">95% interval coverage</th><th class="n">Mean absolute error</th></tr></thead><tbody>
+      <tr><td>Fuel burn per lap</td><td class="n">{audit["fuel_covered"]}/{audit["fuel_scored"]}</td>
+      <td class="n">{audit["fuel_mae_kg"]:.3f} kg</td></tr>
+      <tr><td>Mass-only lap-time gain</td>
+      <td class="n">{fit["effect_audit"]["covered"]}/{fit["effect_audit"]["audit"]}</td>
+      <td class="n">{fit["effect_audit"]["mae_ms"]:.1f} ms</td></tr>
+      <tr><td>Acceleration samples</td><td class="n">{phases["acceleration"]["coverage"]:.1%}</td>
+      <td class="n">{phases["acceleration"]["mae_g"]:.3f} g</td></tr>
+      <tr><td>Deceleration samples</td><td class="n">{phases["deceleration"]["coverage"]:.1%}</td>
+      <td class="n">{phases["deceleration"]["mae_g"]:.3f} g</td></tr></tbody></table></div>
+      <p class="dim">{speed_check} Peak braking was attenuated by a median
+      {audit["median_peak_braking_attenuation_g"]:.2f} g on the bench. The feed lacks a fuel-flow channel.</p></div>"""
+
+
 def health_workspace(d: dict) -> str:
     rows = []
     for c in d["checks"]:
@@ -487,6 +547,7 @@ def health_workspace(d: dict) -> str:
              + (" with uncommitted changes" if code["dirty"] else ""))
     return f"""<section class="ws" id="ws-health" hidden>
   <div class="ht-grid">{''.join(health_tiles(d))}</div>
+  {state_health(d)}
   {energy_card(d)}
   {identifiability_card(d)}
   <div class="card"><div class="card-h"><span>Data checks</span><span class="dim">{build}</span></div>
@@ -502,8 +563,10 @@ def page(d: dict) -> str:
     rnd = f"R{s['round']} · " if s.get("round") else ""
     weather = f'{"wet" if c["rain"] else "dry"} · air {c["air_c"]:.0f} °C · track {c["track_c"]:.0f} °C'
     podium = " · ".join(f'P{p["position"]} {e(cars[p["driver"]]["last"])}' for p in d["podium"])
+    state_panel = state_workspace(d)
+    workspaces = (*WORKSPACES[:-1], ("state", "Fuel & acceleration"), WORKSPACES[-1]) if state_panel else WORKSPACES
     tabs = "".join(f'<button role="tab" data-ws="{k}" aria-selected="{"true" if k == "lap" else "false"}">{name}'
-                   '</button>' for k, name in WORKSPACES)
+                   '</button>' for k, name in workspaces)
     head = _head(f"{s['name']} · {s['session_name']} · parc-ferme",
                  f"Telemetry and engineering debrief of the {s['year']} {s['name']} ({s['session_name'].lower()}): "
                  "every car's laps against distance, race pace by sector, the car model and its checks.",
@@ -519,6 +582,7 @@ def page(d: dict) -> str:
 {lap_workspace(d)}
 {pace_workspace(d)}
 {car_workspace(d)}
+{state_panel}
 {health_workspace(d)}
 </main>
 {_footer(d["code"])}

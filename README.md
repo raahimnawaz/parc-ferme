@@ -107,6 +107,7 @@ the code version.
 | Lap analysis | Any two cars' fastest or typical laps against distance: speed, time gap, throttle, brake, gear and engine speed, under a strip of sectors, corners and straight-mode zones. A track map coloured by who was faster in each of 25 mini-sectors, the lap summary in timing-screen colours, and a reference cursor that measures any stretch. The lap sim's car for car A's team can be overlaid, with its energy channels. |
 | Race pace | Time lost per lap to the fastest car, sector by sector, and the cost of running in traffic. |
 | Car model | The sim car's parameters, where each comes from (rules, measured, fitted or nominal) and the lap-time effect of +1% on each; cornering grip by team. |
+| Fuel & acceleration | Per-driver fuel burn, mass-only time gain and signed longitudinal acceleration for each timed lap. Select a lap from the fuel plot to inspect its acceleration and uncertainty. |
 | Model health | Data checks and interval coverage for grip and race pace. The Energy and drag card compares independent and linked laps, with bench coverage and exit-speed error on held-out blocks. |
 
 Distance is corrected distance, as MoTeC and ATLAS build it: speed integrated over the lap and scaled to the lap
@@ -150,7 +151,8 @@ uv venv --python 3.12 && uv pip install -e ".[dev]"
 .venv/bin/parc-ferme energy 11307     # S4 diagnostic: conditional wheel power over straight-line windows
 .venv/bin/parc-ferme energy 11307 --fit  # linked battery histories, paired intervals and block-held-out speeds
 .venv/bin/parc-ferme bench --energy-only # calibrate and audit the S4 fits on the same blind cars
-.venv/bin/parc-ferme bench            # full S4, grip and race-pace interval studies
+.venv/bin/parc-ferme bench --state-only  # S5 fuel-map and acceleration coverage on blind laps
+.venv/bin/parc-ferme bench            # S5, S4, grip and race-pace interval studies
 .venv/bin/parc-ferme debrief 11307    # the session's workstation, built into _site/ (refused if a gating check fails)
 .venv/bin/parc-ferme site             # rebuild _site/ from every debrief already built
 .venv/bin/parc-ferme publish          # rebuild _site/ and push it to gh-pages (GitHub Pages)

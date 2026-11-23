@@ -170,6 +170,16 @@ def bench(args) -> int:
     from .bench import identifiability
     from .debrief.build import code_version
 
+    if not args.energy_only:
+        from .bench import state
+
+        audit = state.run(quick=args.quick)
+        print(f"S5 fuel: {audit['fuel_covered']}/{audit['fuel_scored']} scored lap intervals cover truth; "
+              f"mean absolute error {audit['fuel_mae_kg']:.3f} kg")
+        for phase, check in audit["phases"].items():
+            print(f"S5 {phase}: {check['coverage']:.1%} pointwise coverage, error {check['mae_g']:.3f} g")
+        if args.state_only or not audit["passed"]:
+            return int(not audit["passed"])
     code = code_version()
     from .bench import energy as bench_energy
 
@@ -265,7 +275,9 @@ def main(argv=None) -> int:
 
     pb = sub.add_parser("bench", help="identifiability bench: check every stated uncertainty against synthetic truth")
     pb.add_argument("--quick", action="store_true", help="a short run that isn't saved")
-    pb.add_argument("--energy-only", action="store_true", help="only calibrate and audit S4 on hidden strategies")
+    only = pb.add_mutually_exclusive_group()
+    only.add_argument("--state-only", action="store_true", help="audit S5 fuel and signed acceleration")
+    only.add_argument("--energy-only", action="store_true", help="only calibrate and audit S4 on hidden strategies")
     pb.set_defaults(func=bench)
 
     pd_ = sub.add_parser("debrief", help="build a session's debrief and rebuild the site")

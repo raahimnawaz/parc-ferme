@@ -23,7 +23,7 @@ from ..core.car import rules
 from ..core.track import FEED_UNITS_PER_M, Track
 from ..models import grip, pace
 from ..session import Session
-from . import channels, energy, summary
+from . import channels, energy, state, summary
 
 CIRCUIT_NAMES = {15: "Circuit de Barcelona-Catalunya"}
 MAP_STEP_M = 10.0
@@ -220,6 +220,7 @@ def build(s: Session) -> dict:
     }
     zones = rules()["active_aero"]["zones"]
     if s.meta["year"] == 2026 and str(s.meta["circuit_key"]) in zones and all(c.passed or not c.gating for c in checks):
+        d["state_fit"] = state.study(s.car_data, t, g.model, sim_car, d["car_model"])
         try:
             d["energy_fit"] = energy.study(s, channels.SIM_FUEL_KG, d["code"])
         except ValueError as err:

@@ -207,3 +207,15 @@ def test_energy_card_displays_paired_full_widths_and_checked_speeds():
     html = render.energy_card(dict(energy_fit=fit))
     assert all(value in html for value in ("0.532 m²", "0.501 m²", "1/21", "287/300", "2.00 km/h", "2.10 km/h"))
     assert render.energy_card({}) == "" and render.energy_card(dict(energy_fit=fit | {"audit_passed": False})) == ""
+
+
+def test_state_workspace_requires_both_audits_and_embeds_lap_data(debrief):
+    fixture = dict(drivers={"AAA": []}, timed_laps=7, estimated_laps=6, mass_s_per_kg=.028,
+                   mass_checks={"5": .027, "35": .028, "60": .029}, audit={"passed": True},
+                   effect_audit={"passed": True})
+    d = debrief | {"state_fit": fixture}
+    assert 'id="ws-state"' in render.state_workspace(d)
+    fixture["audit"]["phases"] = {}
+    assert json.loads(render.page_data(d))["stateFit"]["drivers"] == {"AAA": []}
+    fixture["effect_audit"]["passed"] = False
+    assert render.state_workspace(d) == "" and "stateFit" not in json.loads(render.page_data(d))
