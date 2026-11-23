@@ -48,20 +48,34 @@ def gap_ahead(laps: pd.DataFrame, intervals: pd.DataFrame) -> np.ndarray:
     return out
 
 
-def _design(laps: pd.DataFrame, cars: list, comps: list) -> np.ndarray:
-    """Columns: an effect per car, a wear slope per car but the first (relative to the shared slopes), compound
-    offsets, a wear slope per compound, lap number, and the two traffic bands."""
+def _design(laps: pd.DataFrame, cars: list, comps: list, steepness: dict | None = None) -> np.ndarray:
+    """Columns: an effect per car, a wear slope per car but the first, compound offsets, a wear slope per compound,
+    lap number, and the two traffic bands. A car's own wear scales with each compound's `steepness` (its slope over
+    the mean compound's): a car hard on its tyres is harder on every compound, in proportion."""
     lo, hi = TRAFFIC_BANDS_S
     age = laps.tyre_age.to_numpy(float)
+    scaled = age * (laps.compound.map(steepness).to_numpy(float) if steepness else 1.0)
     cols = [np.column_stack([laps.driver == c for c in cars]).astype(float)]
     if len(cars) > 1:
-        cols.append(np.column_stack([(laps.driver == c).to_numpy() * age for c in cars[1:]]))
+        cols.append(np.column_stack([(laps.driver == c).to_numpy() * scaled for c in cars[1:]]))
     if len(comps) > 1:
         cols.append(np.column_stack([laps.compound == c for c in comps[1:]]).astype(float))
     cols.append(np.column_stack([(laps.compound == c).to_numpy() * age for c in comps]))
     cols.append(laps.lap_number.to_numpy(float)[:, None])
     cols.append(np.column_stack([laps.gap_ahead < lo, (laps.gap_ahead >= lo) & (laps.gap_ahead < hi)]).astype(float))
     return np.hstack(cols)
+
+
+def compound_steepness(laps: pd.DataFrame, cars: list, comps: list) -> dict:
+    """Each compound's wear slope over the mean compound's, from a first lap-time fit in which each car's extra wear
+    is the same on every compound. Falls back to 1 where a slope isn't positive."""
+    if len(comps) < 2:
+        return {c: 1.0 for c in comps}
+    coef = _robust_lstsq(_design(laps, cars, comps), laps[list(SECTORS)].sum(axis=1).to_numpy(float))
+    start = len(cars) + max(len(cars) - 1, 0) + len(comps) - 1
+    slopes = coef[start:start + len(comps)]
+    mean = float(np.mean(slopes))
+    return {c: (float(b) / mean if mean > 0 and b > 0 else 1.0) for c, b in zip(comps, slopes, strict=True)}
 
 
 def _robust_keep(x: np.ndarray, y: np.ndarray) -> np.ndarray:
@@ -168,16 +182,18 @@ def sector_pace(laps: pd.DataFrame) -> Pace:
     comps = sorted(use.compound.unique())
     k = len(cars)
     age = float(np.median(use.tyre_age))
-    x = _design(use, cars, comps)
+    steep = compound_steepness(use, cars, comps)
+    x = _design(use, cars, comps, steep)
     stint = use.stint_number if "stint_number" in use else pd.Series(0, index=use.index)
     groups = (use.driver.astype(str) + "/" + stint.astype(str)).to_numpy()
 
     fits = {sector: gls_random_groups(x, use[sector].to_numpy(float), groups) for sector in SECTORS}
     lap_coef, lap_cov, lap_var = gls_random_groups(x, use[list(SECTORS)].sum(axis=1).to_numpy(float), groups)
-    to_first = _gap_contrasts(k, x.shape[1], 0, age)
+    wear_age = age * steep[comps[0]]
+    to_first = _gap_contrasts(k, x.shape[1], 0, wear_age)
     level = to_first @ lap_coef
     ref = int(np.argmin(level))
-    contrast = _gap_contrasts(k, x.shape[1], ref, age)
+    contrast = _gap_contrasts(k, x.shape[1], ref, wear_age)
     flatter = selection_bias(level, to_first @ lap_cov @ to_first.T)
 
     first = use.drop_duplicates("driver").set_index("driver")
@@ -211,7 +227,8 @@ def holdout(laps: pd.DataFrame, cars: list, comps: list) -> dict:
     median odd-lap time. Errors are median absolute errors [s]: the model has to beat the baseline to earn its terms."""
     train = laps[laps.lap_number % 2 == 1]
     test = laps[(laps.lap_number % 2 == 0) & laps.driver.isin(train.driver.unique())]
-    x_tr, x_te = _design(train, cars, comps), _design(test, cars, comps)
+    steep = compound_steepness(train, cars, comps)
+    x_tr, x_te = _design(train, cars, comps, steep), _design(test, cars, comps, steep)
     pred = sum(x_te @ _robust_lstsq(x_tr, train[sector].to_numpy(float)) for sector in SECTORS)
     actual = test[list(SECTORS)].sum(axis=1).to_numpy()
     base = test.driver.map(train[list(SECTORS)].sum(axis=1).groupby(train.driver).median()).to_numpy()

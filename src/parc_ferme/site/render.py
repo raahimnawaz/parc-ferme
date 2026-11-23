@@ -230,11 +230,18 @@ def pace_workspace(d: dict) -> str:
     if p["excluded"]:
         who = ", ".join(e(cars[c]["last"]) if c in cars else e(c) for c in p["excluded"])
         excluded = f" Not enough green laps for an estimate (fewer than {p['min_laps']}): {who}."
+    age = p.get("ref_age")
+    age_note = f" · at {age} laps' tyre age" if age is not None else ""
+    method_note = ""
+    if age is not None:
+        method_note = (f" Gaps are at a tyre age of {age} laps on the {e(str(p.get('ref_compound', '')).lower())},"
+                       f" with the fastest-looking car's luck ({1000 * abs(p.get('selection_bias_s', 0.0)):.0f} ms)"
+                       " taken off.")
     return f"""<section class="ws" id="ws-pace" hidden>
   <div class="ws-grid">
     <div class="card span2">
       <div class="card-h"><span>Time lost per lap to {e(ref['last'])}'s {e(team(ref['team']))}, by sector</span>
-        <span class="dim">all green laps · tyres, fuel and traffic taken out</span></div>
+        <span class="dim">all green laps · tyres, fuel and traffic taken out{age_note}</span></div>
       <div class="pb-legend"><span><i class="s1"></i>{e(names[0])}</span><span><i class="s2"></i>{e(names[1])}</span>
         <span><i class="s3"></i>{e(names[2])}</span><span><i class="t"></i>net gap</span>
         <span class="dim">left of the line = faster than the reference in that sector</span></div>
@@ -249,10 +256,11 @@ def pace_workspace(d: dict) -> str:
     </div>
     <div class="card">
       <div class="card-h"><span>Pace model</span></div>
-      <p class="dim">Each green lap's sector times at the {e(place(s))} {e(s['session_name'].lower())}, fitted with one
-        effect per car plus tyre compound and age, lap number and traffic. Fitted on odd laps it predicts even ones to
-        {h['model_err_s']:.2f} s (a car's own median lap: {h['baseline_err_s']:.2f} s). ± is one standard
-        error.{excluded}</p>
+      <p class="dim">Each green lap's sector times at the {e(place(s))} {e(s['session_name'].lower())}, fitted with an
+        effect and a tyre-wear slope per car plus tyre compound and age, lap number and traffic, allowing for an
+        offset that holds through each stint.{method_note} Fitted on odd laps it predicts even ones to
+        {h['model_err_s']:.2f} s (a car's own median lap: {h['baseline_err_s']:.2f} s). ± is one standard error;
+        Model health shows how often the bench's intervals held the truth.{excluded}</p>
     </div>
   </div>
 </section>"""
