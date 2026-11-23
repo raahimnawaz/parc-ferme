@@ -159,6 +159,7 @@ table { border-collapse: collapse; width: 100%; }
 .tbl td.n, .tbl th.n { text-align: right; white-space: nowrap; }
 .tbl td.n { color: var(--ink); font-size: 12.5px; }
 .tbl small { color: var(--muted); }
+.tbl-wrap { overflow-x: auto; }
 .params td:first-child { color: var(--ink); font-weight: 400; }
 .params td:first-child small.sym { margin-left: 8px; color: var(--muted); font-family: var(--data); font-weight: 300; font-size: 11px; }
 .params .warnnote { display: block; color: var(--warn); font-size: 12px; margin-top: 1px; font-weight: var(--thin); }
