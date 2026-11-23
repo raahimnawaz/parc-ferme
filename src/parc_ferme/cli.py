@@ -108,6 +108,69 @@ def grip(args) -> int:
     return 0
 
 
+def energy(args) -> int:
+    from .models.energy import analyse
+
+    try:
+        if args.fit:
+            return energy_fit(args)
+        rows = analyse(Session(args.session_key), args.fuel)
+    except ValueError as err:
+        print(err)
+        return 1
+    if rows.empty:
+        print("no usable straight-line windows")
+        return 1
+    path = REPORTS / str(args.session_key) / "energy_windows.csv"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    rows.to_csv(path, index=False)
+    print(f"{len(rows)} windows from {rows.driver.nunique()} cars. Conditional wheel power [kW] = "
+          f"base_kw + drag_kw_per_m2 × CdA [m²], assuming still air and {args.fuel:g} kg fuel.")
+    print(f"report: {path}")
+    return 0
+
+
+def energy_fit(args) -> int:
+    from .bench import energy as bench_energy
+    from .core.car import Car
+    from .debrief.build import code_version
+    from .models.energy import analyse
+    from .models.energy_fit import evaluate, scores
+
+    calibration = bench_energy.load()
+    rows = analyse(Session(args.session_key), args.fuel, multi_lap=True)
+    if rows.empty:
+        raise ValueError("no usable straight-line windows")
+    car = Car(fuel_kg=args.fuel, rho=rows.rho_kg_m3.iloc[0])
+    params, pred, runs, skipped = evaluate(rows, calibration["scales"], car)
+    if pred.empty:
+        raise ValueError("no held-out laps with sufficient training data")
+    full = rows[rows.phase == "full throttle"]
+    held = full[full.lap % 5 == 0]
+    trained = full[(full.lap % 5 != 0) & full.driver.isin(params.driver)]
+    extended = runs[runs.windows >= 2]
+    report = dict(version=code_version(), fingerprint=calibration["fingerprint"], session=args.session_key,
+                  assumed_fuel_kg=args.fuel, rho_kg_m3=car.rho, split="hold out race lap numbers divisible by five",
+                  fitted_cars=params.driver.nunique(), train_car_laps=len(trained.drop_duplicates(["driver", "lap"])),
+                  training_windows=len(trained), available_holdout_windows=len(held), scored_windows=len(pred),
+                  scored_cars=pred.driver.nunique(), scored_car_laps=len(pred.drop_duplicates(["driver", "lap"])),
+                  median_window_s=float((pred.end_s - pred.start_s).median()), skipped_cars=skipped,
+                  window_scores=scores(pred), by_zone={z: scores(g) for z, g in pred.groupby("zone")},
+                  extended_runs=len(extended), extended_scores=scores(extended) if len(extended) else None,
+                  extended_median_s=float((extended.end_s-extended.start_s).median()) if len(extended) else None)
+    out = REPORTS / str(args.session_key)
+    out.mkdir(parents=True, exist_ok=True)
+    params.to_csv(out / "energy_intervals.csv", index=False)
+    pred.to_csv(out / "energy_heldout.csv", index=False)
+    runs.to_csv(out / "energy_rollouts.csv", index=False)
+    (out / "energy_fit.json").write_text(json.dumps(report, indent=2) + "\n")
+    print(f"{report['fitted_cars']} fitted cars, {len(pred)}/{len(held)} held-out windows. "
+          f"Speed MAE {scores(pred)['joint']['mae_kph']:.2f} km/h "
+          f"(local baseline {scores(pred)['local_speed_gain']['mae_kph']:.2f}).")
+    print(f"report: {out / 'energy_fit.json'}")
+    return 0
+
+
 def debrief(args) -> int:
     from .debrief.build import build, to_json
 
@@ -135,6 +198,17 @@ def bench(args) -> int:
     from .debrief.build import code_version
 
     code = code_version()
+    from .bench import energy as bench_energy
+
+    study = bench_energy.run(quick=args.quick)
+    for quantity, groups in study["quantities"].items():
+        total = groups["all"]
+        print(f"S4 {quantity}: {total['covered_cars']}/{total['cars']} independent audit cars covered")
+    if not args.quick:
+        bench_energy.save(study, code)
+    if args.energy_only:
+        return int(any(not result["calibrated"] for group in study["quantities"].values()
+                       for result in group.values()) and not args.quick)
     results = identifiability.run(quick=args.quick)
     for model, label in (("grip", "S3 grip"), ("pace", "race pace")):
         for name, sm in results[model]["confounders"].items():
@@ -208,8 +282,15 @@ def main(argv=None) -> int:
     pg.add_argument("--fuel", type=float, default=20.0, help="fuel load assumed for the compared lap [kg]")
     pg.set_defaults(func=grip)
 
+    pe = sub.add_parser("energy", help="S4: conditional wheel power on each driver's fastest green lap")
+    pe.add_argument("session_key", type=int)
+    pe.add_argument("--fuel", type=float, default=20.0, help="assumed fuel mass for every compared lap [kg]")
+    pe.add_argument("--fit", action="store_true", help="fit across green laps and evaluate held-out speeds")
+    pe.set_defaults(func=energy)
+
     pb = sub.add_parser("bench", help="identifiability bench: check every stated uncertainty against synthetic truth")
     pb.add_argument("--quick", action="store_true", help="a short run that isn't saved")
+    pb.add_argument("--energy-only", action="store_true", help="only calibrate and audit S4 on hidden strategies")
     pb.set_defaults(func=bench)
 
     pd_ = sub.add_parser("debrief", help="build a session's debrief and rebuild the site")

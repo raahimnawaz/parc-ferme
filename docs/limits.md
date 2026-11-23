@@ -166,3 +166,82 @@ lap-to-lap noise explains.
 2. S4: deployment and drag fitted together, reported as above.
 3. S5 and S6: fuel from physics, degradation net of it, and corner phases.
 4. S7: braking energy by energy balance, the friction share as a range, the brake load index.
+
+### S4 straight-line diagnostic
+
+`parc-ferme energy 11307 --fuel 20` writes `reports/11307/energy_windows.csv` for each
+driver's fastest green lap. Each row gives two coefficients. For an assumed effective drag
+area CdA in m², mean wheel power in kW is `base_kw + drag_kw_per_m2 × CdA`.
+The intercept accounts for the change in kinetic and gravitational potential energy and
+rolling loss. The slope integrates aerodynamic power at the session's air density in still
+air. Fuel mass is an input shared across these laps. Wind, a tow and the actual wing state
+can change the interpretation of the drag term.
+
+Windows span at least 1.5 s inside a configured straight-mode zone, at continuous full
+throttle or coast with the brake off. A pedal change, zone change or sample gap over
+0.55 s breaks a window. The 213 Barcelona windows were all at full throttle. Short lifts
+and coasting outside these zones therefore contribute no harvest measurement here.
+The CSV is a diagnostic for the joint fit. Its coefficients do not identify combustion
+power, electric power or battery charge individually. Synthetic forward-dynamics tests
+check reconstruction at known drag. The multi-lap fit uses the same window balance.
+
+### Joint drag and deployment fit
+
+`parc-ferme energy 11307 --fit` takes all full-throttle green-lap windows from the four
+configured zones. One effective straight-mode CdA is shared across each car's training
+laps. Each window has its own signed electric shaft power. The model assumes 400 kW of
+combustion power, 95% driveline efficiency, 20 kg of fuel by default, a 350 kW harvest
+limit and the speed-dependent deployment cap in the rules file. A 50 kW wheel-work
+allowance and a 15% aero-work allowance represent sensitivity to fuel, shifts, wind,
+traffic and the engine map. These allowances are modelling choices.
+
+For each candidate CdA, the work balance determines the required signed electric power.
+The electric limits bound the candidate area in each window. Take the tightest bounds
+within a lap and trim the outer 5% of lap limits on each side. An empty range fails
+the fit. The midpoint gives one admissible trade-off for prediction. The per-zone
+quantity is time-weighted mean signed shaft kW over observed full-throttle training
+windows. It excludes the rest of the lap, including lifts. Battery charge and total lap
+energy remain open.
+
+`parc-ferme bench --energy-only` calibrates the intervals from 160 independent simulated
+cars with hidden strategies (clipping, early taper, full-throttle harvest or partial
+deployment). Each drives 8–45 laps across four idealised straights. Combustion power,
+fuel burn, wind, tow, shifts, lift points and deployment vary. The estimator sees sampled,
+rounded speeds with timing jitter and dropouts. Scoring uses the true shaft work over
+the exact time windows accepted by the estimator. For each quantity the interval scales
+by the largest finite-sample 95% calibration quantile across the four strategies. For
+deployment the calibration score is the worst of the car's four zone errors.
+
+A disjoint 300-car audit includes 60 cars that switch strategy between straights and laps.
+Drag intervals covered **298/300** cars. Deployment intervals covered **all four zones on
+298/300** cars. Both misses for each quantity were in the early-taper group (58/60).
+Median interval widths were 0.79 m² and 307 kW. The chosen midpoints underestimate both
+quantities on the bench (mean signed normalised errors of −1.12 and −1.09). The intervals
+describe recovery under the simulated conditions. The result gives little support for
+using the midpoint as a physical measurement. Calibration, strategy breakdown and source
+fingerprint are in `src/parc_ferme/bench/energy_coverage.json`.
+
+At Barcelona the fit uses 845 car-laps. Every fifth race lap is held out for all cars,
+including when constructing the reference geometry. The local deployment map uses
+training windows from the same driver and zone, matched in entry position and speed.
+Starting from the measured entry speed, it integrates speed forward for the observed
+full-throttle duration. The baseline uses the same neighbours' observed speed gains
+per second. During multi-window runs both models propagate position and speed until
+the end of the uninterrupted stretch.
+
+| Held-out Barcelona check | Joint fit MAE | Local speed-gain MAE |
+| --- | ---: | ---: |
+| 1,838 window endpoints across 204 car-laps and 21 cars | 2.02 km/h | 2.09 km/h |
+| 566 runs of at least two consecutive windows, median 3.36 s | 3.54 km/h | 3.70 km/h |
+
+Fixing CdA at the S2 nominal 0.80 m² and refitting deployment gives **2.08 km/h** on the
+same 1,838 endpoints. Stroll had fewer than five eligible training laps. The median
+Barcelona interval spans 0.62 m² for CdA and 229 kW for zone power. Of 84 driver-zone
+intervals, 75 include both harvest and deployment. These are within-session predictions
+conditional on continued full throttle. A power-unit-family drag ranking, per-lap
+clipping forecast and full-lap energy balance each need further evidence.
+
+Artifacts in `reports/11307/` include the conditional ranges and simulation-calibrated
+95% intervals in `energy_intervals.csv`, all scored endpoints in `energy_heldout.csv`,
+uninterrupted runs in `energy_rollouts.csv` and the split, exclusions, baseline errors,
+bias, RMSE and 90th-percentile absolute errors in `energy_fit.json`.

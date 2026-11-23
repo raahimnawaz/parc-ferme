@@ -147,7 +147,10 @@ uv venv --python 3.12 && uv pip install -e ".[dev]"
 .venv/bin/parc-ferme check 11307      # data checks + warm-up analyses, written to reports/11307/
 .venv/bin/parc-ferme sim 11307        # nominal 2026 car on the minimum-time line vs Hamilton's best lap
 .venv/bin/parc-ferme grip 11307       # S3: grip per team, the fitted field car, driven distance per section
-.venv/bin/parc-ferme bench            # identifiability bench: every stated uncertainty against synthetic truth (~3 min)
+.venv/bin/parc-ferme energy 11307     # S4 diagnostic: conditional wheel power over straight-line windows
+.venv/bin/parc-ferme energy 11307 --fit  # joint S4 fit, intervals and held-out speed scores
+.venv/bin/parc-ferme bench --energy-only # recalibrate and audit S4 on blind synthetic cars
+.venv/bin/parc-ferme bench            # full S4, grip and race-pace interval studies
 .venv/bin/parc-ferme debrief 11307    # the session's workstation, built into _site/ (refused if a gating check fails)
 .venv/bin/parc-ferme site             # rebuild _site/ from every debrief already built
 .venv/bin/parc-ferme publish          # rebuild _site/ and push it to gh-pages (GitHub Pages)

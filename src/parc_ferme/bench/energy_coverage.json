@@ -1,0 +1,129 @@
+{
+  "version": {
+    "commit": "c2dc131",
+    "dirty": true
+  },
+  "fingerprint": "ba2f28ac8b157e6b50be64fb83cbf567d687ec71ef961938097276ed7db1852f",
+  "calibration_per_strategy": 40,
+  "audit_per_strategy": 60,
+  "scales": {
+    "deployment_kw": 0.7965098247386342,
+    "drag_m2": 0.9172933256080608
+  },
+  "quantities": {
+    "deployment_kw": {
+      "all": {
+        "cars": 300,
+        "covered_cars": 298,
+        "cover_95": 0.9933333333333333,
+        "sd_z": 0.3768361202998308,
+        "mean_z": -1.0901255358429403,
+        "median_width": 306.77694410255407,
+        "calibrated": true
+      },
+      "clip": {
+        "cars": 60,
+        "covered_cars": 60,
+        "cover_95": 1.0,
+        "sd_z": 0.27170054230431906,
+        "mean_z": -1.3423722533839673,
+        "median_width": 343.5679089452607,
+        "calibrated": true
+      },
+      "early_taper": {
+        "cars": 60,
+        "covered_cars": 58,
+        "cover_95": 0.9666666666666667,
+        "sd_z": 0.26702341959125225,
+        "mean_z": -1.5182982715763051,
+        "median_width": 334.6565003467257,
+        "calibrated": true
+      },
+      "harvest": {
+        "cars": 60,
+        "covered_cars": 60,
+        "cover_95": 1.0,
+        "sd_z": 0.23991578191863377,
+        "mean_z": -0.7375562536843676,
+        "median_width": 253.3676456922634,
+        "calibrated": true
+      },
+      "partial": {
+        "cars": 60,
+        "covered_cars": 60,
+        "cover_95": 1.0,
+        "sd_z": 0.13434872102182552,
+        "mean_z": -0.9441525904271385,
+        "median_width": 375.19807273097433,
+        "calibrated": true
+      },
+      "switching": {
+        "cars": 60,
+        "covered_cars": 60,
+        "cover_95": 1.0,
+        "sd_z": 0.25345279377386065,
+        "mean_z": -0.9082483101429222,
+        "median_width": 273.2917563311065,
+        "calibrated": true
+      }
+    },
+    "drag_m2": {
+      "all": {
+        "cars": 300,
+        "covered_cars": 298,
+        "cover_95": 0.9933333333333333,
+        "sd_z": 0.34718891227872856,
+        "mean_z": -1.124582757447584,
+        "median_width": 0.7891809110449719,
+        "calibrated": true
+      },
+      "clip": {
+        "cars": 60,
+        "covered_cars": 60,
+        "cover_95": 1.0,
+        "sd_z": 0.24897568625791394,
+        "mean_z": -1.3125124151568235,
+        "median_width": 0.9401857686990772,
+        "calibrated": true
+      },
+      "early_taper": {
+        "cars": 60,
+        "covered_cars": 58,
+        "cover_95": 0.9666666666666667,
+        "sd_z": 0.24524110459601686,
+        "mean_z": -1.4334919911641433,
+        "median_width": 0.8859210680671705,
+        "calibrated": true
+      },
+      "harvest": {
+        "cars": 60,
+        "covered_cars": 60,
+        "cover_95": 1.0,
+        "sd_z": 0.3221117345003364,
+        "mean_z": -0.8963563741166485,
+        "median_width": 0.6122762639708272,
+        "calibrated": true
+      },
+      "partial": {
+        "cars": 60,
+        "covered_cars": 60,
+        "cover_95": 1.0,
+        "sd_z": 0.23150658032334834,
+        "mean_z": -0.9977484963189824,
+        "median_width": 1.1242027003084814,
+        "calibrated": true
+      },
+      "switching": {
+        "cars": 60,
+        "covered_cars": 60,
+        "cover_95": 1.0,
+        "sd_z": 0.32963561642081673,
+        "mean_z": -0.9828045104813221,
+        "median_width": 0.6415785036965562,
+        "calibrated": true
+      }
+    }
+  },
+  "failed_calibrations": [],
+  "failed_audits": []
+}
