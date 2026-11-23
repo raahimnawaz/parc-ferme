@@ -1,0 +1,221 @@
+{
+ "window balance": {
+  "scales": {
+   "deployment_kw": 0.78905871832171,
+   "drag_m2": 0.771667077085564
+  },
+  "quantities": {
+   "deployment_kw": {
+    "all": {
+     "cover_95": 0.9766666666666667,
+     "median_width": 328.50275395742506
+    },
+    "clip": {
+     "cover_95": 0.9666666666666667,
+     "median_width": 378.7504215202721
+    },
+    "early_taper": {
+     "cover_95": 0.9166666666666666,
+     "median_width": 360.752844304781
+    },
+    "harvest": {
+     "cover_95": 1.0,
+     "median_width": 258.11072372593077
+    },
+    "partial": {
+     "cover_95": 1.0,
+     "median_width": 385.53427289707054
+    },
+    "switching": {
+     "cover_95": 1.0,
+     "median_width": 285.2493943403771
+    }
+   },
+   "drag_m2": {
+    "all": {
+     "cover_95": 0.9566666666666667,
+     "median_width": 0.7038579942322634
+    },
+    "clip": {
+     "cover_95": 0.9666666666666667,
+     "median_width": 0.895880491102425
+    },
+    "early_taper": {
+     "cover_95": 0.9,
+     "median_width": 0.8342275904645078
+    },
+    "harvest": {
+     "cover_95": 0.9666666666666667,
+     "median_width": 0.5068937119769881
+    },
+    "partial": {
+     "cover_95": 1.0,
+     "median_width": 0.9208328625213007
+    },
+    "switching": {
+     "cover_95": 0.95,
+     "median_width": 0.5690783625976742
+    }
+   }
+  },
+  "drag_error": {
+   "clip": {
+    "bias": -0.28450563523928396,
+    "mae": 0.284505635239284
+   },
+   "early_taper": {
+    "bias": -0.2893531630234288,
+    "mae": 0.28935316302342884
+   },
+   "harvest": {
+    "bias": -0.13508849705693254,
+    "mae": 0.13508849705693254
+   },
+   "partial": {
+    "bias": -0.24620484208538765,
+    "mae": 0.24620484208538762
+   },
+   "switching": {
+    "bias": -0.1489703896619526,
+    "mae": 0.1489703896619526
+   }
+  }
+ },
+ "run shape": {
+  "scales": {
+   "deployment_kw": 4.794710007287178,
+   "drag_m2": 2.5394813008996944
+  },
+  "quantities": {
+   "deployment_kw": {
+    "all": {
+     "cover_95": 0.97,
+     "median_width": 326.21008980382095
+    },
+    "clip": {
+     "cover_95": 0.9833333333333333,
+     "median_width": 185.52312143925593
+    },
+    "early_taper": {
+     "cover_95": 1.0,
+     "median_width": 311.38735595039054
+    },
+    "harvest": {
+     "cover_95": 0.9333333333333333,
+     "median_width": 248.45052928360457
+    },
+    "partial": {
+     "cover_95": 0.9333333333333333,
+     "median_width": 1310.056531692223
+    },
+    "switching": {
+     "cover_95": 1.0,
+     "median_width": 399.36592529379755
+    }
+   },
+   "drag_m2": {
+    "all": {
+     "cover_95": 0.9533333333333334,
+     "median_width": 0.5282371662691168
+    },
+    "clip": {
+     "cover_95": 1.0,
+     "median_width": 0.30052151688085516
+    },
+    "early_taper": {
+     "cover_95": 1.0,
+     "median_width": 0.46338882265701015
+    },
+    "harvest": {
+     "cover_95": 0.9166666666666666,
+     "median_width": 0.39311354005933613
+    },
+    "partial": {
+     "cover_95": 0.85,
+     "median_width": 2.962017201430307
+    },
+    "switching": {
+     "cover_95": 1.0,
+     "median_width": 0.6545459809486245
+    }
+   }
+  },
+  "drag_error": {
+   "clip": {
+    "bias": -0.052440504269828526,
+    "mae": 0.05278402707894317
+   },
+   "early_taper": {
+    "bias": -0.05030537243085117,
+    "mae": 0.05122167464805016
+   },
+   "harvest": {
+    "bias": -0.0750461632105969,
+    "mae": 0.0750461632105969
+   },
+   "partial": {
+    "bias": -0.16075794404487456,
+    "mae": 0.38586770226557976
+   },
+   "switching": {
+    "bias": -0.05308675948297683,
+    "mae": 0.06523849020265517
+   }
+  }
+ },
+ "run shape, mass tow wind known": {
+  "scales": {
+   "drag_m2": 3.9298037417922638
+  },
+  "quantities": {
+   "drag_m2": {
+    "all": {
+     "cover_95": 0.99,
+     "median_width": 0.780800884580525
+    },
+    "clip": {
+     "cover_95": 1.0,
+     "median_width": 0.45708328722244396
+    },
+    "early_taper": {
+     "cover_95": 1.0,
+     "median_width": 0.6804246134003331
+    },
+    "harvest": {
+     "cover_95": 1.0,
+     "median_width": 0.6235397111636336
+    },
+    "partial": {
+     "cover_95": 0.95,
+     "median_width": 4.959965942535963
+    },
+    "switching": {
+     "cover_95": 1.0,
+     "median_width": 0.9962824811568121
+    }
+   }
+  },
+  "drag_error": {
+   "clip": {
+    "bias": 0.0019344957301715112,
+    "mae": 0.022530632452381183
+   },
+   "early_taper": {
+    "bias": 0.010444627569148898,
+    "mae": 0.033679713991865444
+   },
+   "harvest": {
+    "bias": -0.03400449654393015,
+    "mae": 0.03579430700768858
+   },
+   "partial": {
+    "bias": -0.10788294404487453,
+    "mae": 0.4102699993517566
+   },
+   "switching": {
+    "bias": -0.012170092816310126,
+    "mae": 0.044894272712533656
+   }
+  }
+ }
+}
