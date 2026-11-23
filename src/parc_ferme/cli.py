@@ -131,18 +131,23 @@ def energy(args) -> int:
 
 
 def energy_fit(args) -> int:
+    import pandas as pd
+
     from .bench import energy as bench_energy
     from .core.car import Car
     from .debrief.build import code_version
+    from .models.battery import ledger
     from .models.energy import analyse
     from .models.energy_fit import evaluate, scores
 
     calibration = bench_energy.load()
-    rows = analyse(Session(args.session_key), args.fuel, multi_lap=True)
+    battery_laps = {}
+    rows = analyse(Session(args.session_key), args.fuel, multi_lap=True, battery_laps=battery_laps)
     if rows.empty:
         raise ValueError("no usable straight-line windows")
     car = Car(fuel_kg=args.fuel, rho=rows.rho_kg_m3.iloc[0])
-    params, pred, runs, skipped = evaluate(rows, calibration["scales"], car)
+    baseline, _, _, baseline_skipped = evaluate(rows, calibration["scales"], car)
+    params, pred, runs, skipped = evaluate(rows, calibration["battery"]["scales"], car, battery_laps)
     if pred.empty:
         raise ValueError("no held-out laps with sufficient training data")
     full = rows[rows.phase == "full throttle"]
@@ -160,6 +165,32 @@ def energy_fit(args) -> int:
                   extended_median_s=float((extended.end_s-extended.start_s).median()) if len(extended) else None)
     out = REPORTS / str(args.session_key)
     out.mkdir(parents=True, exist_ok=True)
+    keys = ["driver", "zone", "quantity"]
+    paired = baseline.merge(params, on=keys, how="outer", suffixes=("_windows", "_battery"),
+                            indicator=True, validate="one_to_one")
+    matched = paired[paired._merge == "both"].copy()
+    widths = {}
+    for quantity, group in matched.groupby("quantity"):
+        before = group.sim95_high_windows - group.sim95_low_windows
+        after = group.sim95_high_battery - group.sim95_low_battery
+        raw_before = group.high_windows - group.low_windows
+        raw_after = group.high_battery - group.low_battery
+        widths[quantity] = dict(pairs=len(before), windows_median=float(before.median()),
+                                battery_median=float(after.median()), narrower=int((after < before-1e-8).sum()),
+                                wider=int((after > before+1e-8).sum()),
+                                raw_narrower=int((raw_after < raw_before-1e-8).sum()),
+                                max_raw_reduction=float((raw_before-raw_after).max()))
+    budgets = []
+    for q in params[params.quantity == "drag_m2"].itertuples():
+        lap_ids = trained.loc[trained.driver == q.driver, "lap"].unique()
+        parts = {lap: battery_laps[q.driver, lap] for lap in lap_ids}
+        budgets.extend(dict(driver=q.driver, **row) for row in ledger(parts, q.estimate, car))
+    budget = pd.DataFrame(budgets)
+    budget.to_csv(out / "energy_lap_balance.csv", index=False)
+    paired.to_csv(out / "energy_paired_intervals.csv", index=False)
+    report.update(interval_comparison=widths, baseline_skipped_cars=baseline_skipped,
+                  unmatched_intervals=int((paired._merge != "both").sum()),
+                  feasible_training_laps=int(budget.feasible.sum()))
     params.to_csv(out / "energy_intervals.csv", index=False)
     pred.to_csv(out / "energy_heldout.csv", index=False)
     runs.to_csv(out / "energy_rollouts.csv", index=False)
@@ -201,13 +232,15 @@ def bench(args) -> int:
     from .bench import energy as bench_energy
 
     study = bench_energy.run(quick=args.quick)
-    for quantity, groups in study["quantities"].items():
-        total = groups["all"]
-        print(f"S4 {quantity}: {total['covered_cars']}/{total['cars']} independent audit cars covered")
+    for label, fit in (("windows", study), ("battery", study["battery"])):
+        for quantity, groups in fit["quantities"].items():
+            total = groups["all"]
+            print(f"S4 {label} {quantity}: {total['covered_cars']}/{total['cars']} independent audit cars covered")
     if not args.quick:
         bench_energy.save(study, code)
     if args.energy_only:
-        return int(any(not result["calibrated"] for group in study["quantities"].values()
+        return int(any(not result["calibrated"] for fit in (study, study["battery"])
+                       for group in fit["quantities"].values()
                        for result in group.values()) and not args.quick)
     results = identifiability.run(quick=args.quick)
     for model, label in (("grip", "S3 grip"), ("pace", "race pace")):

@@ -50,7 +50,7 @@ def windows(samples, ref, zones, car):
     return rows
 
 
-def analyse(session, fuel_kg, *, multi_lap=False):
+def analyse(session, fuel_kg, *, multi_lap=False, battery_laps=None):
     """Straight windows on fastest or all green laps. Reserve every fifth race lap for validation."""
     config = rules()["active_aero"]["zones"].get(str(session.meta["circuit_key"]))
     if not config:
@@ -72,9 +72,16 @@ def analyse(session, fuel_kg, *, multi_lap=False):
     car = Car(fuel_kg=fuel_kg, rho=air_density(wx.pressure.median(), wx.air_temperature.median(), wx.humidity.median()))
     selected = green if multi_lap else green.loc[green.groupby("driver_number").lap_time.idxmin()]
     samples = placed_samples(session.car_data, loc, selected, ref)
+    durations = selected.set_index(["driver", "lap_number"]).lap_time
     records = []
     for (driver, lap), group in samples.groupby(["driver", "lap_number"]):
-        for row in windows(group, ref, zones, car):
+        straight = windows(group, ref, zones, car)
+        if battery_laps is not None:
+            from .battery import segments
+
+            battery_laps[driver, lap] = segments(group, ref, straight, car, durations.loc[driver, lap])
+        for row in straight:
+            row["zone_id"] = row["zone"]
             pair = config[row["zone"] - 1]
             row["zone"] = "–".join(map(str, pair))
             records.append(dict(driver=driver, lap=lap, fuel_kg=fuel_kg, rho_kg_m3=car.rho, crr=car.crr, **row))

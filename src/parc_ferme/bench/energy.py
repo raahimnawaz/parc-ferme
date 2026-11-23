@@ -2,7 +2,6 @@
 
 import hashlib
 import json
-from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -21,7 +20,7 @@ def fingerprint():
     root = Path(__file__).resolve().parents[1]
     digest = hashlib.sha256()
     for name in ("bench/energy.py", "bench/coverage.py", "models/energy.py", "models/energy_fit.py",
-                 "core/car.py", "core/rules_2026.toml"):
+                 "models/battery.py", "core/car.py", "core/rules_2026.toml"):
         digest.update((root / name).read_bytes())
     return digest.hexdigest()
 
@@ -40,85 +39,126 @@ def load():
 STRATEGIES = ("clip", "early_taper", "harvest", "partial")
 
 
-def experiment(seed, strategy):
+def experiment(seed, strategy, paired=False):
+    """Four sequential straights, lifts, braking and exits per lap; carry the hidden store through all four."""
+    from ..models.battery import segments
+
     rng = np.random.default_rng(seed)
     car = Car(fuel_kg=20, rho=1.142)
     laps = int(rng.integers(8, 46))
-    n = laps * 4
-    lap = np.repeat(np.arange(1, laps + 1), 4)
-    zone = np.tile(np.arange(4), laps)
+    lap_ids = np.arange(1, laps + 1)
     cda = rng.uniform(.55, 1.25)
-    ice = rng.uniform(370, 420) + rng.normal(0, 4, n)
-    mass = car.mass - car.fuel_kg + (72 - 68*lap/laps) + rng.uniform(-2, 2)
-    grade = rng.uniform(-.012, .016, 4)[zone]
-    wind = rng.normal(0, 2., 4)[zone] + rng.normal(0, .8, n)
-    tow = 1 - rng.uniform(.04, .16, n) * (rng.random(n) < .30)
-    knee = rng.uniform(2, 8, 4)[zone] + rng.normal(0, 1.2, n)
-    strength = rng.uniform(.65, 1, n)
-    harvest = rng.uniform(70, 260, n)
-    lift = rng.uniform(8, 12, n)
+    ice = rng.uniform(370, 420) + rng.normal(0, 4, laps)
+    mass = car.mass - car.fuel_kg + (72 - 68*lap_ids/laps) + rng.uniform(-2, 2)
+    capacity = car.rules["power_unit"]["energy_store_mj"]
+    budget = car.rules["power_unit"]["harvest_per_lap_mj"]
+    soc = rng.uniform(.1, capacity, laps)
+    recovered = np.zeros(laps)
     dt = .05
-    t = np.arange(201) * dt
-    v = np.empty((len(t), n))
-    v[0] = rng.uniform(54, 64, n)
-    s = np.zeros_like(v)
-    energy = np.zeros_like(v)  # shaft kJ
-    mode = rng.choice(STRATEGIES, size=n) if strategy == "switching" else np.full(n, strategy)
-    for i, time in enumerate(t[:-1]):
-        speed = v[i]
-        cap = car.mguk_limit_w(speed) / 1000
-        k = np.select([mode == "clip", mode == "early_taper", mode == "harvest"],
-                      [strength * cap * (time < knee), strength * cap * np.clip(1 - (time-knee)/3, 0, 1),
-                       np.where(time < knee, strength * cap, -harvest)],
-                      default=cap * (.35 + .18 * np.sin((time-knee)/2)))
-        coast = time >= lift
-        k = np.where(coast, -harvest, k)
-        shift = (speed > 70) & (speed < 70.8)
-        power = car.driveline_eff * (ice * ~coast * (1 - .35*shift) + k) * 1000
-        force = power / speed - .5*car.rho*cda*tow*(speed+wind)**2 - mass*G*(grade + car.crr)
-        v[i+1] = speed + dt * force/mass
-        s[i+1] = s[i] + .5*dt*(speed+v[i+1])
-        energy[i+1] = energy[i] + dt*k
-
-    x = np.arange(1400.)
-    ref = Track("bench", x, x, x*0, x*0, x*0, x*0, 1.)
+    t = np.arange(341) * dt
+    entry = rng.uniform(53, 62, laps)
+    x = np.arange(1800.)
     mask = np.ones(len(x), int)
-    records, truth = [], {k: [] for k in range(4)}
-    for j in range(n):
-        tick = np.arange(2, len(t)-1, 5) + rng.integers(-1, 2, len(t[2:-1:5]))
-        tick = tick[rng.random(len(tick)) > .035]
-        sample = pd.DataFrame(dict(s=np.rint(s[tick, j]), t=t[tick], v=np.rint(v[tick, j]*3.6)/3.6,
-                                   brake=0, throttle=100*(t[tick] < lift[j])))
+    records, truth = [], {zone: [] for zone in range(4)}
+    battery = {lap: [] for lap in lap_ids}
+    for zone in range(4):
+        grade = rng.uniform(-.012, .016)
+        ref = Track("bench", x, x, x*0, x*0, x*0, x*0, 1., z=x*grade)
+        wind = rng.normal(0, 2.) + rng.normal(0, .8, laps)
+        tow = 1 - rng.uniform(.04, .16, laps) * (rng.random(laps) < .30)
+        knee = rng.uniform(2, 9) + rng.normal(0, 1.2, laps)
+        strength = rng.uniform(.65, 1, laps)
+        harvest = rng.uniform(70, 260, laps)
+        lift = rng.uniform(8, 10.3, laps)
+        mode = rng.choice(STRATEGIES, laps) if strategy == "switching" else np.full(laps, strategy)
+        v = np.empty((len(t), laps))
+        v[0] = entry
+        s = np.zeros_like(v)
+        energy = np.zeros_like(v)
+        apex = rng.uniform(42, 48, laps)
+        for i, time in enumerate(t[:-1]):
+            speed = v[i]
+            cap = car.mguk_limit_w(speed) / 1000
+            k = np.select([mode == "clip", mode == "early_taper", mode == "harvest"],
+                          [strength*cap*(time < knee), strength*cap*np.clip(1-(time-knee)/3, 0, 1),
+                           np.where(time < knee, strength*cap, -harvest)],
+                          default=cap*(.35+.18*np.sin((time-knee)/2)))
+            resistance = .5*car.rho*cda*tow*(speed+wind)**2 + mass*G*(grade + car.crr)
+            coast = time >= lift
+            braking = 10.5 <= time < 14.
+            exiting = time >= 14.
+            k = np.where(coast, -harvest, k)
+            if braking:
+                decel = np.minimum(0., (apex-speed)/(14.-time))
+                brake_kw = np.maximum(0., -(mass*decel+resistance)*speed/1000)
+                k = -np.minimum(car.mguk_w/1000, brake_kw/car.driveline_eff)
+            if exiting:
+                k = .22*cap
+            charge_room = np.minimum(budget-recovered, capacity-soc)
+            k = np.clip(k, -np.maximum(0., charge_room)*1000/(dt*car.regen_eff), soc*1000/dt)
+            gained = np.maximum(0., -k)*car.regen_eff*dt/1000
+            soc += gained - np.maximum(k, 0.)*dt/1000
+            recovered += gained
+            engine = ice * (1-.35*((speed > 70) & (speed < 70.8))) * (~coast)
+            if exiting:
+                engine = .75*ice
+            power = car.driveline_eff*(engine+k)*1000
+            accel = (power/speed-resistance)/mass
+            if braking:
+                accel = np.minimum(accel, decel)  # friction brakes supply the remainder
+            v[i+1] = speed + dt*accel
+            s[i+1] = s[i]+.5*dt*(speed+v[i+1])
+            energy[i+1] = energy[i]+dt*k
+        entry = v[-1]
+        tick_grid = np.arange(2, len(t)-1, 5)
+        for j, lap in enumerate(lap_ids):
+            tick = tick_grid + rng.integers(-1, 2, len(tick_grid))
+            tick = tick[rng.random(len(tick)) > .035]
+            throttle = np.where(t[tick] >= 14., 75, 100*(t[tick] < lift[j]))
+            sample = pd.DataFrame(dict(s=np.rint(s[tick, j]), t=t[tick], v=np.rint(v[tick, j]*3.6)/3.6,
+                                       brake=100*((t[tick] >= 10.5) & (t[tick] < 14.)), throttle=throttle))
+            straight = windows(sample, ref, mask, car)
+            for row in straight:
+                row["zone"] = zone
+            if paired:
+                battery[lap].append(segments(sample, ref, straight, car, t[-1]))
+            for row in straight:
+                if row["phase"] == "full throttle":
+                    row.update(zone_id=zone, lap=int(lap))
+                    records.append(row)
+                    start, end = np.rint(np.array([row["start_s"], row["end_s"]])/dt).astype(int)
+                    truth[zone].append([energy[end, j]-energy[start, j], t[end]-t[start]])
+    data = pd.DataFrame(records)
+    fits = {"windows": None}
+    if paired:
+        fits["battery"] = {lap: np.concatenate(parts) for lap, parts in battery.items()}
+    results = []
+    for name, parts in fits.items():
+        try:
+            _, _, quantities = profile(data, car, parts)
+        except ValueError as err:
+            results.append(dict(seed=seed, strategy=strategy, model=name, failure=str(err)))
+            continue
+        for q in quantities:
+            actual = cda
+            if q["quantity"] == "deployment_kw":
+                total, duration = np.sum(truth[q["zone"]], axis=0)
+                actual = total/duration
+            delta = actual - q["estimate"]
+            half = q["high"]-q["estimate"] if delta >= 0 else q["estimate"]-q["low"]
+            q.update(seed=seed, strategy=strategy, model=name, truth=actual, score=abs(delta)/max(half, 1e-9))
+        results.extend(quantities)
+    return results
 
-        for row in windows(sample, replace(ref, z=grade[j]*x), mask, car):
-            if row["phase"] != "full throttle":
-                continue
-            row.update(zone=int(zone[j]), lap=int(lap[j]))
-            records.append(row)
-            start, end = np.rint(np.array([row["start_s"], row["end_s"]])/dt).astype(int)
-            truth[zone[j]].append([energy[end, j]-energy[start, j], t[end]-t[start]])
-    _, _, quantities = profile(pd.DataFrame(records), car)
-    for q in quantities:
-        actual = cda
-        if q["quantity"] == "deployment_kw":
-            total, duration = np.sum(truth[q["zone"]], axis=0)
-            actual = total / duration
-        delta = actual - q["estimate"]
-        half = q["high"] - q["estimate"] if delta >= 0 else q["estimate"] - q["low"]
-        q.update(seed=seed, strategy=strategy, truth=actual, score=abs(delta)/max(half, 1e-9))
-    return quantities
 
-
-def trials(start, per_strategy, strategies):
+def trials(start, per_strategy, strategies, paired=False):
     records = []
     failures = []
     for i in range(per_strategy):
         for j, strategy in enumerate(strategies):
             seed = start + len(strategies)*i + j
-            try:
-                records.extend(experiment(seed, strategy))
-            except ValueError as err:
-                failures.append(dict(seed=seed, strategy=strategy, reason=str(err)))
+            for row in experiment(seed, strategy, paired):
+                (failures if "failure" in row else records).append(row)
     return pd.DataFrame(records), failures
 
 
@@ -127,17 +167,27 @@ def run(quick=False):
     the estimator need not know the strategy. A car is the independent unit, including
     for deployment where its worst zone sets its calibration score."""
     n_cal, n_audit = (20, 4) if quick else (40, 60)
-    cal, cal_fail = trials(10000, n_cal, STRATEGIES)
+    cal, cal_fail = trials(10000, n_cal, STRATEGIES, paired=True)
     audit_strategies = (*STRATEGIES, "switching")
-    audit, audit_fail = trials(20000, n_audit, audit_strategies)
+    audit, audit_fail = trials(20000, n_audit, audit_strategies, paired=True)
+    results = {}
+    for model in ("windows", "battery"):
+        results[model] = assess(cal[cal.model == model], audit[audit.model == model], n_cal, n_audit,
+                                [r for r in cal_fail if r["model"] == model],
+                                [r for r in audit_fail if r["model"] == model])
+    return results["windows"] | {"battery": results["battery"]}
+
+
+def assess(cal, audit, n_cal, n_audit, cal_fail, audit_fail):
+    audit_strategies = (*STRATEGIES, "switching")
     scales, results = {}, {}
     for quantity, group in cal.groupby("quantity"):
         worst = group.groupby(["strategy", "seed"]).score.max()
         factors = []
         for strategy in STRATEGIES:
-            sample = np.sort(worst.loc[strategy])
+            sample = np.sort(np.r_[worst.loc[strategy], np.full(n_cal-len(worst.loc[strategy]), np.inf)])
             rank = int(np.ceil(.95 * (len(sample)+1)))
-            if rank > len(sample):
+            if rank > len(sample) or not np.isfinite(sample[rank-1]):
                 raise ValueError("insufficient independent calibration cars")
             factors.append(sample[rank-1])
         k = scales[quantity] = float(max(factors))

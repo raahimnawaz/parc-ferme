@@ -95,8 +95,9 @@ def test_joint_fit_holds_out_whole_laps_and_rolls_without_teacher_forcing():
 def test_joint_intervals_on_fresh_hidden_strategies():
     from parc_ferme.bench import energy
 
-    scales = energy.load()["scales"]
-    audit, failures = energy.trials(30000, 3, (*energy.STRATEGIES, "switching"))
+    study = energy.load()
+    audit, failures = energy.trials(30000, 3, (*energy.STRATEGIES, "switching"), paired=True)
     assert not failures
-    for quantity, g in audit.groupby("quantity"):
+    for (model, quantity), g in audit.groupby(["model", "quantity"]):
+        scales = (study if model == "windows" else study["battery"])["scales"]
         assert (g.groupby("seed").score.max() <= scales[quantity]).mean() >= .8

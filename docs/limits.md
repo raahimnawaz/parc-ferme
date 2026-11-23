@@ -200,12 +200,42 @@ The electric limits bound the candidate area in each window. Take the tightest b
 within a lap and trim the outer 5% of lap limits on each side. An empty range fails
 the fit. The midpoint gives one admissible trade-off for prediction. The per-zone
 quantity is time-weighted mean signed shaft kW over observed full-throttle training
-windows. It excludes the rest of the lap, including lifts. Battery charge and total lap
-energy remain open.
+windows. The battery balance constrains those windows using the rest of the lap.
+
+### Full-lap battery balance
+
+The ledger covers the timing line to the timing line. At each segment the store gains
+85% of harvested shaft work or spends deployed shaft work (unit discharge efficiency).
+Charge stays within the configured 4 MJ window and recovered energy within the configured
+8.5 MJ per lap. Both are model inputs from the project's rules file. Start and end charges
+are free for each lap. This permits a net change on a racing lap and leaves cross-lap
+continuity as a separate constraint to investigate.
+
+The signed work balance admits harvesting at full throttle. At a lift with both pedals
+off, or during braking, the available kinetic and elevation loss bounds recovery. The
+lower bound is zero because engine and friction braking are unobserved. Elsewhere on
+throttle, the maximum assumed combustion power and the measured work give a lower bound
+on electric power. A missing sample span or pedal transition can exchange energy within
+the machine's power limits. Its full duration stays in the ledger.
+
+A backward pass finds feasible charge ranges. A forward pass returns a minimum-harvest
+trajectory. A candidate drag must admit a trajectory on at least 95% of the car's training
+laps. Within the surviving drag range a linear programme bounds zone-average signed power
+when a proposed extreme violates the battery balance. Allowing different windows to use
+different points within that drag range makes these outer bounds conservative.
+Separate optimisations at the representative CdA give upper limits on recovery in each
+phase. These limits can correspond to different trajectories.
+
+On Hamilton's lap 44 (80.122 s), the upper limits at the representative CdA were **1.09 MJ**
+during the measured full-throttle straight windows, **0.45 MJ** during 2.12 s of lift-and-coast,
+and **3.53 MJ** under braking. These are store-side model limits. The public feed does
+not measure how Hamilton divided recovery between those phases.
 
 `parc-ferme bench --energy-only` calibrates the intervals from 160 independent simulated
 cars with hidden strategies (clipping, early taper, full-throttle harvest or partial
-deployment). Each drives 8–45 laps across four idealised straights. Combustion power,
+deployment). Each drives 8–45 synthetic laps with a hidden store carried through four
+successive straights, lifts, braking zones and exits. The generator clips its policy
+at an empty or full store and at the recovery cap. Combustion power,
 fuel burn, wind, tow, shifts, lift points and deployment vary. The estimator sees sampled,
 rounded speeds with timing jitter and dropouts. Scoring uses the true shaft work over
 the exact time windows accepted by the estimator. For each quantity the interval scales
@@ -213,13 +243,11 @@ by the largest finite-sample 95% calibration quantile across the four strategies
 deployment the calibration score is the worst of the car's four zone errors.
 
 A disjoint 300-car audit includes 60 cars that switch strategy between straights and laps.
-Drag intervals covered **298/300** cars. Deployment intervals covered **all four zones on
-298/300** cars. Both misses for each quantity were in the early-taper group (58/60).
-Median interval widths were 0.79 m² and 307 kW. The chosen midpoints underestimate both
-quantities on the bench (mean signed normalised errors of −1.12 and −1.09). The intervals
-describe recovery under the simulated conditions. The result gives little support for
-using the midpoint as a physical measurement. Calibration, strategy breakdown and source
-fingerprint are in `src/parc_ferme/bench/energy_coverage.json`.
+Both fits covered drag on **297/300** cars and all four deployment zones on **297/300** cars.
+Each fit uses its own calibration on the same cars. For the battery fit, the median audit
+interval widths were 0.73 m² and 308 kW. The representative values still underestimate
+both quantities (mean signed normalised errors of −1.19 and −1.08). The per-strategy
+results and source fingerprint are in `src/parc_ferme/bench/energy_coverage.json`.
 
 At Barcelona the fit uses 845 car-laps. Every fifth race lap is held out for all cars,
 including when constructing the reference geometry. The local deployment map uses
@@ -235,13 +263,24 @@ the end of the uninterrupted stretch.
 | 566 runs of at least two consecutive windows, median 3.36 s | 3.54 km/h | 3.70 km/h |
 
 Fixing CdA at the S2 nominal 0.80 m² and refitting deployment gives **2.08 km/h** on the
-same 1,838 endpoints. Stroll had fewer than five eligible training laps. The median
-Barcelona interval spans 0.62 m² for CdA and 229 kW for zone power. Of 84 driver-zone
-intervals, 75 include both harvest and deployment. These are within-session predictions
-conditional on continued full throttle. A power-unit-family drag ranking, per-lap
-clipping forecast and full-lap energy balance each need further evidence.
+same 1,838 endpoints. Stroll had fewer than five eligible training laps. All 845 training laps admitted a feasible store history at their driver's representative drag.
+
+| Barcelona 95% interval width (median) | Straight windows only | With full-lap balance | Intervals narrowed |
+| --- | ---: | ---: | ---: |
+| Effective drag area | 0.574 m² | 0.574 m² | 0/21 |
+| Zone-average signed electric power | 223.4 kW | 223.4 kW | 0/84 |
+
+The uncalibrated ranges also stayed equal to numerical precision. The previous bench
+(at `93f725f`) gave 0.624 m² and 229 kW. Recalibrating the straight-window fit on the new
+synthetic laps accounts for that change. Unknown charge at both ends and freedom to harvest
+in several phases leave the window extremes feasible. A drag ranking or deployment map
+would require tighter independent evidence about the car's power or charge.
 
 Artifacts in `reports/11307/` include the conditional ranges and simulation-calibrated
 95% intervals in `energy_intervals.csv`, all scored endpoints in `energy_heldout.csv`,
 uninterrupted runs in `energy_rollouts.csv` and the split, exclusions, baseline errors,
 bias, RMSE and 90th-percentile absolute errors in `energy_fit.json`.
+The matched fits are in `energy_paired_intervals.csv`. Each training lap's feasible
+minimum-harvest trajectory is summarised in `energy_lap_balance.csv`, including start,
+end and extreme charge, deployed and recovered work, its phase breakdown and separate
+phase recovery ceilings. All these quantities are conditional on the representative CdA.

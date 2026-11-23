@@ -16,7 +16,7 @@ WHEEL_ALLOWANCE_KW = 50.
 AERO_FRACTION = 0.15
 
 
-def profile(rows, car):
+def profile(rows, car, battery_laps=None):
     """Robust identification range and typical signed shaft kW (time weighted in sampled windows)."""
     eta = car.driveline_eff
     ice, limit = car.ice_w / 1000, car.mguk_w / 1000
@@ -28,6 +28,12 @@ def profile(rows, car):
     high = hi.groupby(rows.lap).min().quantile(.05)
     if low >= high:
         raise ValueError("incompatible drag constraints")
+    power_ranges = {}
+    if battery_laps is not None:
+        from .battery import drag_range, zone_power_ranges
+
+        low, high = drag_range([battery_laps[lap] for lap in rows.lap.unique()], low, high, car)
+        power_ranges = zone_power_ranges(battery_laps, low, high, car)
     cda = (low + high) / 2
     latent = rows.copy()
     latent["electric_kw"] = ((b + a*cda) / eta - ice).clip(-limit, rows.cap_kw)
@@ -37,6 +43,10 @@ def profile(rows, car):
     for zone, group in latent.groupby("zone"):
         signed = group[["electric_kw", "low_kw", "high_kw"]]
         p, lower, upper = np.average(signed, axis=0, weights=group.end_s - group.start_s)
+        if power_ranges:
+            bound = power_ranges[group.zone_id.iloc[0]]
+            lower, upper = max(lower, bound[0]), min(upper, bound[1])
+            p = np.clip(p, lower, upper)
         quantities.append(dict(quantity="deployment_kw", zone=zone, estimate=p, low=lower, high=upper))
     quantities.append(dict(quantity="drag_m2", zone="all", estimate=cda, low=low, high=high))
     return cda, latent, quantities
@@ -101,7 +111,7 @@ def rollouts(train, held, cda, car):
     return frame.groupby("run").tail(1).drop(columns="run")
 
 
-def evaluate(rows, scales, car):
+def evaluate(rows, scales, car, battery_laps=None):
     """Same race-lap holdout for every driver. No held-out speeds used in fit, map or baseline."""
     params, predictions, runs, skipped = [], [], [], {}
     full = rows[rows.phase == "full throttle"]
@@ -112,7 +122,8 @@ def evaluate(rows, scales, car):
             skipped[driver] = "fewer than five training laps"
             continue
         try:
-            cda, latent, quantities = profile(train, car)
+            laps = None if battery_laps is None else {lap: battery_laps[driver, lap] for lap in train.lap.unique()}
+            cda, latent, quantities = profile(train, car, laps)
         except ValueError as err:
             skipped[driver] = str(err)
             continue
