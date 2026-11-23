@@ -385,6 +385,53 @@ def health_tiles(d: dict) -> list[str]:
     return tiles
 
 
+STATUS_TEXT = {"resolved": "resolved", "interval only": "interval only", "not resolved": "not resolved"}
+
+
+def identifiability_card(d: dict) -> str:
+    """What the bench says of each reported quantity's intervals, and what this session's estimates resolve."""
+    idf = d.get("identifiability")
+    if not idf:
+        return ""
+    rows = []
+    for r in idf["rows"]:
+        kind = "ok" if r["status"] == "resolved" else ("bad" if not r["calibrated"] else "warn")
+        if r["unit"] == "s":
+            def fmt(v):
+                return f'{v:.2f}<small> s</small>'
+        else:
+            def fmt(v):
+                return f'{v:.1f}<small> pts</small>'
+        cover = "—" if r["bench_cover_95"] is None else f'{100 * r["bench_cover_95"]:.0f}<small> %</small>'
+        ratio = "—" if r["bench_sd_z"] is None else f'{r["bench_sd_z"]:.2f}'
+        rows.append(f'<tr><td><span class="st {kind}">{kind}</span></td><td>{e(r["label"])}</td>'
+                    f'<td class="n">{cover}</td><td class="n">{ratio}</td><td class="n">± {fmt(r["median_se"])}</td>'
+                    f'<td class="n">{fmt(r["spread"])}</td><td>{e(STATUS_TEXT[r["status"]])}</td></tr>')
+    b = idf.get("bench")
+    if b:
+        commit = b["commit"].rstrip("+")
+        note = (f'{b["grip_races"]} synthetic races for grip, {b["pace_races"]} for pace · measured on '
+                f'<a href="{REPO_URL}/commit/{e(commit)}">{e(b["commit"])}</a>')
+    else:
+        note = "bench not run: intervals unchecked"
+    pace = idf.get("pace", {})
+    return f"""<div class="card"><div class="card-h"><span>Identifiability</span><span class="dim">{note}</span></div>
+    <div class="tbl-wrap"><table class="tbl"><thead><tr><th></th><th>Quantity</th><th class="n">95% covers</th>
+      <th class="n">Error ÷ ±</th><th class="n">Typical ±</th><th class="n">Spread</th>
+      <th>This session</th></tr></thead>
+      <tbody>{''.join(rows)}</tbody></table></div>
+    <p class="dim">Each model is run on synthetic races with the confounders the feed carries switched on: different
+      lines and commitment per driver, tyre wear that differs by team, fuel, track evolution, dirty air and ~4 Hz
+      sampling for grip; car-specific wear and offsets that hold for a whole stint for pace. <b>95% covers</b>: how
+      often the stated 95% interval held the true value (pass at 90% or more). <b>Error ÷ ±</b>: spread of the errors
+      over the stated uncertainty (1 is honest; pass at 1.25 or less). A quantity is resolved when the bench backs its
+      intervals and a typical ± is under a third of the spread between teams or cars; interval only when the
+      differences are real but rankings are uncertain; not resolved when the data can't tell them apart. Pace gaps
+      are at a tyre age of {pace.get("ref_age", "—")} laps on the {e(str(pace.get("ref_compound", "")).lower())}, with
+      the fastest-looking car's flattering luck ({1000 * abs(pace.get("selection_bias_s", 0.0)):.0f} ms) taken off.</p>
+  </div>"""
+
+
 def health_workspace(d: dict) -> str:
     rows = []
     for c in d["checks"]:
@@ -398,6 +445,7 @@ def health_workspace(d: dict) -> str:
              + (" with uncommitted changes" if code["dirty"] else ""))
     return f"""<section class="ws" id="ws-health" hidden>
   <div class="ht-grid">{''.join(health_tiles(d))}</div>
+  {identifiability_card(d)}
   <div class="card"><div class="card-h"><span>Data checks</span><span class="dim">{build}</span></div>
     <table class="tbl">{''.join(rows)}</table></div>
 </section>"""

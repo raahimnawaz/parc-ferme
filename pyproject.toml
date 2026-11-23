@@ -39,4 +39,4 @@ select = ["E", "F", "I", "B", "UP"]
 pythonpath = ["src"]
 
 [tool.setuptools.package-data]
-parc_ferme = ["**/*.toml", "site/static/*"]
+parc_ferme = ["**/*.toml", "site/static/*", "bench/*.json"]

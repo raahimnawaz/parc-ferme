@@ -17,6 +17,7 @@ from scipy.spatial import cKDTree
 from .. import checks as data_checks
 from .. import jolpica
 from ..bench import grip as grip_bench
+from ..bench import identifiability
 from ..bench import pace as pace_bench
 from ..core.track import FEED_UNITS_PER_M, Track
 from ..models import grip, pace
@@ -129,6 +130,17 @@ def _records(df: pd.DataFrame) -> list[dict]:
             for r in df.to_dict(orient="records")]
 
 
+def _identifiability(rel: pd.DataFrame, p) -> dict:
+    results = identifiability.load()
+    bench = None if results is None else {
+        "commit": results["commit"], "generated_utc": results["generated_utc"],
+        "grip_races": results["grip"]["races"], "pace_races": results["pace"]["races"],
+        "pace_cars": results["pace"]["cars"]}
+    return {"bench": bench, "rows": identifiability.session_rows(results, rel, p.cars, p.reference),
+            "pace": {"ref_age": p.ref_age, "ref_compound": p.ref_compound, "stint_sd_s": p.stint_sd_s,
+                     "selection_bias_s": p.selection_bias_s}}
+
+
 def build(s: Session) -> dict:
     checks, t = data_checks.run(s)
     t["gap_ahead"] = pace.gap_ahead(t, s.intervals)
@@ -198,6 +210,7 @@ def build(s: Session) -> dict:
                        "max_error_s": float(pace_rec.error_s.abs().max()),
                        "tolerance_s": pace_bench.TOLERANCE_S,
                        "passed": bool((pace_rec.error_s.abs() <= pace_bench.TOLERANCE_S).all())},
+        "identifiability": _identifiability(rel, p),
         "checks": [c.as_dict() for c in checks],
         "code": code_version(),
         "generated_utc": datetime.now(UTC).strftime("%Y-%m-%d %H:%M"),

@@ -28,6 +28,11 @@ WINDOW = 0.012
 FLAT_OUT_THROTTLE = 95.0
 FUEL_AVG_KG = 35.0  # assumed: about half a race fuel load, the average over a race; S5 replaces it
 OUTLIER_MADS = 4.0
+DIRTY_AIR_GAP_S = 1.0
+# The estimator's own error with every confounder switched off: linearising the corner equation and taking minima
+# from ~4 Hz samples. The identifiability bench measures it on clean synthetic laps (rms over 12 races, points);
+# leave-one-corner-out can't see it, because it doesn't vary from corner to corner. Added in quadrature.
+MODEL_ERROR_PCT = {"mech": 0.20, "downforce": 0.65, "slow_corner": 0.15, "fast_corner": 0.20}
 
 
 def lap_window(f: np.ndarray, centre: float, half_width: float = WINDOW) -> np.ndarray:
@@ -111,6 +116,8 @@ def _design(minima: pd.DataFrame, w: pd.Series) -> tuple[np.ndarray, np.ndarray,
     if "compound" in minima and minima.compound.nunique() > 1:
         comps = sorted(minima.compound.unique())[1:]
         cols.append(np.column_stack([minima.compound.to_numpy() == c for c in comps]).astype(float))
+    if "behind" in minima and minima.behind.nunique() > 1:
+        cols.append((minima.behind.to_numpy(float) * wc)[:, None])  # downforce lost in dirty air, shared
     for col in ("lap_number", "tyre_age"):
         if col in minima and minima[col].nunique() > 1:
             x = minima[col].to_numpy(float)
@@ -131,11 +138,14 @@ def _fit(x: np.ndarray, y: np.ndarray, k: int) -> np.ndarray:
 
 def relative_grip(minima: pd.DataFrame, w: pd.Series) -> pd.DataFrame:
     """Per team, mechanical grip and downforce relative to the mean team [%]. Compound, tyre age and lap number
-    (fuel burn, track evolution) enter as shared terms. Also reports the grip the two imply at the field's slowest
-    and fastest corner, which sit inside the data range.
+    (fuel burn, track evolution) enter as shared terms, and so does dirty air where `minima` has a `behind` column
+    (the lap was within DIRTY_AIR_GAP_S of the car ahead): it takes downforce, so its effect scales with w. Without
+    it, teams that spend more laps in traffic read as having less downforce (identifiability bench). Also reports
+    the grip the two imply at the field's slowest and fastest corner, which sit inside the data range.
 
-    Standard errors are leave-one-corner-out jackknife. A bootstrap over laps would only see lap-to-lap noise;
-    this also sees how much a team's result rests on one corner, where its drivers may take a different line."""
+    Standard errors are leave-one-corner-out jackknife, plus MODEL_ERROR_PCT in quadrature. A bootstrap over laps
+    would only see lap-to-lap noise; the jackknife also sees how much a team's result rests on one corner, where its
+    drivers may take a different line."""
     x, y, teams, _ = _design(minima, w)
     k = len(teams)
     est = _fit(x, y, k)
@@ -151,11 +161,13 @@ def relative_grip(minima: pd.DataFrame, w: pd.Series) -> pd.DataFrame:
         return np.sqrt((n - 1) / n * np.sum((values - values.mean(0)) ** 2, axis=0))
 
     w_lo, w_hi = float(w.reindex(corners).min()), float(w.reindex(corners).max())
-    out = pd.DataFrame({"team": teams, "mech_pct": 100 * est[:, 0], "mech_se": 100 * se(jack[:, :, 0]),
-                        "downforce_pct": 100 * est[:, 1], "downforce_se": 100 * se(jack[:, :, 1])})
-    for name, wv in (("slow_corner_pct", w_lo), ("fast_corner_pct", w_hi)):
-        out[name] = 100 * (est[:, 0] + wv * est[:, 1])
-        out[name.replace("pct", "se")] = 100 * se(jack[:, :, 0] + wv * jack[:, :, 1])
+    out = pd.DataFrame({"team": teams, "mech_pct": 100 * est[:, 0],
+                        "mech_se": np.hypot(100 * se(jack[:, :, 0]), MODEL_ERROR_PCT["mech"]),
+                        "downforce_pct": 100 * est[:, 1],
+                        "downforce_se": np.hypot(100 * se(jack[:, :, 1]), MODEL_ERROR_PCT["downforce"])})
+    for name, wv in (("slow_corner", w_lo), ("fast_corner", w_hi)):
+        out[f"{name}_pct"] = 100 * (est[:, 0] + wv * est[:, 1])
+        out[f"{name}_se"] = np.hypot(100 * se(jack[:, :, 0] + wv * jack[:, :, 1]), MODEL_ERROR_PCT[name])
     laps = minima.groupby(["driver_number", "lap_number"]).ngroups
     out.attrs |= {"w_slow": w_lo, "w_fast": w_hi, "laps": int(laps), "corners": n}
     return out.sort_values("fast_corner_pct", ascending=False).reset_index(drop=True)
@@ -198,6 +210,13 @@ def line_lengths(line: Track, ref: Track, anchors: np.ndarray) -> np.ndarray:
     return np.diff(line.lap_distance(s)) % line.length
 
 
+def with_dirty_air(minima: pd.DataFrame, laps: pd.DataFrame) -> pd.DataFrame:
+    """`minima` with a `behind` column: the lap was within DIRTY_AIR_GAP_S of the car ahead at some point."""
+    gap = laps.set_index(["driver_number", "lap_number"]).gap_ahead
+    keys = pd.MultiIndex.from_arrays([minima.driver_number, minima.lap_number])
+    return minima.assign(behind=(gap.reindex(keys).to_numpy() < DIRTY_AIR_GAP_S))
+
+
 @dataclass
 class GripAnalysis:
     rho: float
@@ -226,6 +245,8 @@ def analyse(s, laps: pd.DataFrame, clean_gap_s: float = 1.5) -> GripAnalysis:
     samples = placed_samples(s.car_data, s.location, laps[laps.green], model.reference)
     all_minima = corner_minima(samples, model.corner_fraction)
     minima = grip_limited(all_minima)
+    if "gap_ahead" in laps:
+        minima = with_dirty_air(minima, laps)
     v_ref = minima.groupby("corner").v.median()
     for _ in range(2):  # the line depends on the car: fit, search the line for the fitted car, fit again
         car = fit_car(model.line, model.zones, car, model.corner_fraction, v_ref).car

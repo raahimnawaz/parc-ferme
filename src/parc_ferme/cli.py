@@ -130,6 +130,25 @@ def debrief(args) -> int:
     return site(args)
 
 
+def bench(args) -> int:
+    from .bench import identifiability
+    from .debrief.build import code_version
+
+    code = code_version()
+    results = identifiability.run(quick=args.quick)
+    for model, label in (("grip", "S3 grip"), ("pace", "race pace")):
+        for name, sm in results[model]["confounders"].items():
+            mark = "PASS" if sm["calibrated"] else "WIDE" if sm["sd_z"] < 1 else "FAIL"
+            print(f"{mark}  {label:10} {name:12} 95% covers {100 * sm['cover_95']:.0f}%, "
+                  f"error / stated {sm['sd_z']:.2f}, mean {sm['mean_z']:+.2f} SE ({sm['n']} estimates)")
+    if args.quick:
+        print("quick run: not saved")
+        return 0
+    commit = code["commit"] + ("+" if code["dirty"] else "")
+    print(f"saved {identifiability.save(results, commit)} (measured on {commit})")
+    return 0
+
+
 def site(args) -> int:
     from .debrief.build import SCHEMA
     from .site import render
@@ -188,6 +207,10 @@ def main(argv=None) -> int:
     pg.add_argument("--driver", default="HAM", help="driver whose lap the fitted car is compared with")
     pg.add_argument("--fuel", type=float, default=20.0, help="fuel load assumed for the compared lap [kg]")
     pg.set_defaults(func=grip)
+
+    pb = sub.add_parser("bench", help="identifiability bench: check every stated uncertainty against synthetic truth")
+    pb.add_argument("--quick", action="store_true", help="a short run that isn't saved")
+    pb.set_defaults(func=bench)
 
     pd_ = sub.add_parser("debrief", help="build a session's debrief and rebuild the site")
     pd_.add_argument("session_key", type=int)

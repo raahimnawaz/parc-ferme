@@ -23,7 +23,7 @@ def _records(df):
 def debrief(bench_session):
     """A complete debrief document built from the test benches and the synthetic session, in the shape
     debrief.build writes and the site reads back."""
-    p = pace.sector_pace(pace_bench.race(), n_boot=20)
+    p = pace.sector_pace(pace_bench.race())
     b = grip_bench.run()
     v_ref = b.minima.groupby("corner").v.median()
     w = pd.Series(grip.aero_share(v_ref, 1.5, 3.6, 803.0, 1.15), index=v_ref.index)

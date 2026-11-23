@@ -8,7 +8,7 @@ from parc_ferme.models import pace
 
 @pytest.fixture(scope="module")
 def fitted():
-    return pace.sector_pace(bench.race(), n_boot=60)
+    return pace.sector_pace(bench.race())
 
 
 def test_bench_recovers_every_cars_sector_gaps():
@@ -35,7 +35,7 @@ def test_held_out_laps_beat_each_cars_own_median(fitted):
 def test_cars_with_too_few_laps_are_left_out():
     laps = bench.race()
     few = laps[(laps.driver == "FFF") & (laps.lap_number <= pace.MIN_LAPS - 1)]
-    p = pace.sector_pace(pd.concat([laps[laps.driver != "FFF"], few]), n_boot=5)
+    p = pace.sector_pace(pd.concat([laps[laps.driver != "FFF"], few]))
     assert p.excluded == ["FFF"] and "FFF" not in set(p.cars.driver)
 
 
