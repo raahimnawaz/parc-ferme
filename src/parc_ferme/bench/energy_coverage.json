@@ -1,9 +1,9 @@
 {
   "version": {
-    "commit": "cde95ad",
+    "commit": "45ab3b4",
     "dirty": false
   },
-  "fingerprint": "8e2d428c8b66a81992cebac10769fc7a045c32f2313467ebf867f21e354cded2",
+  "fingerprint": "e2dea6b4245981a84c6e123e78dca8b18d31d4cd57f97e818e76a60043e05dde",
   "calibration_per_strategy": 40,
   "audit_per_strategy": 60,
   "scales": {
@@ -373,5 +373,14 @@
     },
     "failed_calibrations": [],
     "failed_audits": []
+  },
+  "family_pairs": {
+    "pairs": 150,
+    "covered_pairs": 150,
+    "cover_95": 1.0,
+    "sd_z": 0.37436949751233933,
+    "mean_z": -0.041530378987840254,
+    "median_width": 1.3468728079133183,
+    "calibrated": true
   }
 }
