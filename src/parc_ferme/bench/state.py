@@ -3,7 +3,7 @@
 import numpy as np
 from scipy.integrate import cumulative_trapezoid, trapezoid
 
-from ..core.car import G
+from ..core.car import G, rules
 from ..models.state import estimate_fuel, gap_bridges, interval, smooth
 
 
@@ -52,7 +52,9 @@ def trial(seed, *, profile_checks=False):
     idle = rng.uniform(0, .055)
     load = idle+(utilisation-idle)*throttle**exponent
     load *= np.where(rpm > 12550, rng.uniform(.65, 1.), 1.)
-    true_flow = np.minimum(3000., 165+.27*rpm)*load/3600/rng.uniform(41, 45)
+    fuel = rules()["mass"]
+    lhv = rng.uniform(fuel["fuel_lhv_min_mj_per_kg"], fuel["fuel_lhv_max_mj_per_kg"])
+    true_flow = np.minimum(fuel["fuel_energy_flow_mj_per_h"], 165+.27*rpm)*load/3600/lhv
     actual = trapezoid(true_flow, t)
     ticks = np.cumsum(rng.uniform(.17, .32, int(start/.17)))
     ticks = ticks[(ticks < t[-1]) & (rng.random(len(ticks)) > .035)]

@@ -341,15 +341,16 @@ the ECU map and each supplier's energy density are unobserved.
 [FIA Section C, Issue 17, articles C5.2.3–6](https://www.fia.com/system/files/documents/fia_2026_f1_regulations_-_section_c_technical_-_iss_17_-_2026-04-28.pdf)
 
 The central map uses 1.5% of the RPM ceiling at closed throttle and 95% at full throttle,
-linear between them, with a nominal 43 MJ/kg fuel. Scenario maps use 41–45 MJ/kg and
+linear between them, with fuel at 39.5 MJ/kg, the middle of the 38–41 MJ/kg the rules allow
+(FIA C16.2). Scenario maps use 38–41 MJ/kg and
 vary the part-load shape, maximum flow and overrun fueling. A stopped engine consumes zero
 in the model. Invalid pedal codes and spans over 0.8 s are missing. A lap needs direct
 coverage of at least 95% of its duration. The centre fills short missing periods at the
 observed mean; the scenario limits allow zero through maximum flow during those periods.
 
 At Barcelona the model returned estimates on 1,224 of 1,234 timed car-laps. The median
-of the 1,045 supported green car-laps was 0.896 kg. The fitted car at 20 kg fuel gives
-0.02768 s/kg from its +1% mass test, or a 24.8 ms gain from that typical burn, all else
+of the 1,045 supported green car-laps was 0.976 kg (0.896 kg at the 43 MJ/kg used before `e27675b`). The fitted car at 20 kg fuel gives
+0.02768 s/kg from its +1% mass test, or a 27.0 ms gain from that typical burn, all else
 equal. Five-kilogram perturbations starting at 5, 35 and 60 kg give 0.02637–0.02823 s/kg.
 The gain at lap start accumulates previous burn relative to the first timing line and
 is withheld after any missing lap estimate. It is a first-order mass-only effect.
@@ -369,7 +370,8 @@ vary the hidden load map, fuel properties, shifts, low-load periods and braking 
 and release. The renderer jitters sample times, rounds speed, drops packets, inserts
 outages and invalidates occasional pedal samples. Calibration uses 200 laps. A separate
 300-lap audit checks fuel once per supported lap and acceleration pointwise, by sign.
-The fuel interval covered 282/299 scored laps, with 0.126 kg mean absolute error.
+The fuel interval covered 280/299 scored laps, with 0.136 kg mean absolute error; the synthetic
+fuel's heating value is drawn from the rules' 38–41 MJ/kg.
 Acceleration and deceleration coverage were both 95.2%, with mean absolute errors
 of 0.027 g and 0.085 g. The raw central difference gave 0.038 g and 0.091 g on the same
 samples. The pointwise bands do not describe uncertainty on a lap's maximum braking.
