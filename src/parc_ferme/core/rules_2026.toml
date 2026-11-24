@@ -20,6 +20,15 @@ energy_store_mj = 4.0         # state-of-charge window, FIA C5.2.9
 harvest_per_lap_mj = 8.5      # FIA C5.2.10 (7 at circuits the FIA names; +0.5 under B7.2)
 rev_limit_rpm = 15000.0
 
+[power_unit_families]
+# Engine supplier of each team, by OpenF1 team name (2026 supply deals). secondary: F1.com team guides.
+# Same-engine comparisons cancel the combustion engine's power; each team's battery use does not cancel.
+Mercedes = ["Mercedes", "McLaren", "Williams", "Alpine"]
+Ferrari = ["Ferrari", "Haas F1 Team", "Cadillac"]
+"Red Bull Ford" = ["Red Bull Racing", "Racing Bulls"]
+Honda = ["Aston Martin"]
+Audi = ["Audi"]
+
 [dimensions]
 width_m = 1.9                 # secondary: F1.com
 wheelbase_m = 3.4             # maximum. secondary: F1.com

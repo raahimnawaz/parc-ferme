@@ -417,6 +417,9 @@ def identifiability_card(d: dict) -> str:
         if r["unit"] == "s":
             def fmt(v):
                 return f'{v:.2f}<small> s</small>'
+        elif r["unit"] == "m²":
+            def fmt(v):
+                return f'{v:.2f}<small> m²</small>'
         else:
             def fmt(v):
                 return f'{v:.1f}<small> pts</small>'
@@ -428,7 +431,11 @@ def identifiability_card(d: dict) -> str:
     b = idf.get("bench")
     if b:
         commit = b["commit"].rstrip("+")
-        note = (f'{b["grip_races"]} synthetic races for grip, {b["pace_races"]} for pace · measured on '
+        fit = d.get("energy_fit") or {}
+        drag = (fit.get("bench") or {}).get("drag_m2")
+        pairs = fit.get("bench_family")
+        cars = f', {drag["cars"]} cars and {pairs["pairs"]} same-engine pairs for drag' if drag and pairs else ""
+        note = (f'{b["grip_races"]} synthetic races for grip, {b["pace_races"]} for pace{cars} · measured on '
                 f'<a href="{REPO_URL}/commit/{e(commit)}">{e(b["commit"])}</a>')
     else:
         note = "bench not run: intervals unchecked"
@@ -440,7 +447,10 @@ def identifiability_card(d: dict) -> str:
       <tbody>{''.join(rows)}</tbody></table></div>
     <p class="dim">Each model is run on synthetic races with the confounders the feed carries switched on: different
       lines and commitment per driver, tyre wear that differs by team, fuel, track evolution, dirty air and ~4 Hz
-      sampling for grip; car-specific wear and offsets that hold for a whole stint for pace. <b>95% covers</b>: how
+      sampling for grip; car-specific wear and offsets that hold for a whole stint for pace; hidden battery
+      strategies, tows, wind and engine power for drag, where same-engine rows compare each car with the others
+      using its engine (Mercedes, Ferrari, Red Bull Ford, Honda, Audi): their engine power cancels, but each car's
+      battery use doesn't. Drag rows read each car's 95% interval as ±1.96 standard errors. <b>95% covers</b>: how
       often the stated 95% interval held the true value (pass at 90% or more). <b>Error ÷ ±</b>: spread of the errors
       over the stated uncertainty (1 is honest; pass at 1.25 or less). A quantity is resolved when the bench backs its
       intervals and a typical ± is under a third of the spread between teams or cars; interval only when the

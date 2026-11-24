@@ -25,20 +25,22 @@ def calibrated(s: dict) -> bool:
     return s["cover_95"] >= MIN_COVER_95 and s["sd_z"] <= MAX_SD_Z
 
 
-def resolution(est, se, bench_ok: bool) -> str:
+def resolution(est, se, bench_ok: bool, groups=None) -> str:
     """What a session's estimates of one quantity, one per team or car relative to the field, can be said to show.
 
     "not resolved": the bench doesn't back the intervals, or the differences are no bigger than the noise (a
     chi-square test of all of them being zero passes at 5%). "interval only": the differences are real, but a
     typical uncertainty is more than a third of the spread between them, so rankings are uncertain. "resolved":
-    otherwise.
+    otherwise. Estimates relative to their own group's mean (`groups` labels each) lose one degree of freedom per
+    group rather than one in all.
     """
     est, se = np.asarray(est, float), np.asarray(se, float)
     ok = np.isfinite(est) & np.isfinite(se) & (se > 0)
     est, se = est[ok], se[ok]
-    if not bench_ok or len(est) < 2:
+    dof = len(est) - (1 if groups is None else len(set(np.asarray(groups)[ok])))
+    if not bench_ok or dof < 1:
         return "not resolved"
     chi2 = float(np.sum((est / se) ** 2))
-    if stats.chi2.sf(chi2, len(est) - 1) >= 0.05:
+    if stats.chi2.sf(chi2, dof) >= 0.05:
         return "not resolved"
     return "resolved" if np.median(se) <= RESOLVED_SE_SHARE * np.std(est) else "interval only"

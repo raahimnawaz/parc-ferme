@@ -102,3 +102,15 @@ def test_joint_intervals_on_fresh_hidden_strategies():
     for (model, quantity), g in audit.groupby(["model", "quantity"]):
         scales = (study if model == "windows" else study[model])["scales"]
         assert (g.groupby("seed").score.max() <= scales[quantity]).mean() >= .8
+
+
+def test_a_shared_engine_level_leaves_every_other_draw_alone():
+    from parc_ferme.bench.energy import experiment
+
+    own = np.random.default_rng(12345)
+    own.integers(8, 46)
+    own.uniform(.55, 1.25)
+    level = own.uniform(370, 420)
+    assert experiment(12345, "clip", True) == experiment(12345, "clip", True, ice_level=level)
+    shifted = experiment(12345, "clip", True, ice_level=level + 30)
+    assert [r["estimate"] for r in shifted] != [r["estimate"] for r in experiment(12345, "clip", True)]

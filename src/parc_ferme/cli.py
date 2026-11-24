@@ -211,6 +211,9 @@ def bench(args) -> int:
         for quantity, groups in fit["quantities"].items():
             total = groups["all"]
             print(f"S4 {label} {quantity}: {total['covered_cars']}/{total['cars']} independent audit cars covered")
+    pairs = study["family_pairs"]
+    print(f"S4 same-engine drag differences: {pairs['covered_pairs']}/{pairs['pairs']} pairs covered, "
+          f"error / stated {pairs['sd_z']:.2f}")
     if not args.quick:
         bench_energy.save(study, code)
     if args.energy_only:

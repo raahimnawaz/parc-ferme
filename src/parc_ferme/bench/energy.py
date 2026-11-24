@@ -80,8 +80,9 @@ def drive_sector(entry, soc, recovered, mass, ice, grade, aero, wind, strength, 
     return v, s, energy, soc, recovered
 
 
-def experiment(seed, strategy, paired=False):
-    """Four sequential straights, lifts, braking and exits per lap; carry the hidden store through all four."""
+def experiment(seed, strategy, paired=False, ice_level=None):
+    """Four sequential straights, lifts, braking and exits per lap; carry the hidden store through all four.
+    `ice_level` [kW] replaces the car's own engine level, so two cars can share one engine."""
     from ..models.battery import segments
 
     rng = np.random.default_rng(seed)
@@ -89,7 +90,8 @@ def experiment(seed, strategy, paired=False):
     laps = int(rng.integers(8, 46))
     lap_ids = np.arange(1, laps + 1)
     cda = rng.uniform(.55, 1.25)
-    ice = rng.uniform(370, 420) + rng.normal(0, 4, laps)
+    level = rng.uniform(370, 420)
+    ice = (level if ice_level is None else ice_level) + rng.normal(0, 4, laps)
     mass = car.mass - car.fuel_kg + (72 - 68*lap_ids/laps) + rng.uniform(-2, 2)
     capacity = car.rules["power_unit"]["energy_store_mj"]
     budget = car.rules["power_unit"]["harvest_per_lap_mj"]
@@ -184,7 +186,53 @@ def run(quick=False):
         results[model] = assess(cal[cal.model == model], audit[audit.model == model], n_cal, n_audit,
                                 [r for r in cal_fail if r["model"] == model],
                                 [r for r in audit_fail if r["model"] == model])
-    return results["windows"] | {"battery": results["battery"], "linked": results["linked"]}
+    pairs = family_pairs(30000, 8 if quick else 150, results["linked"]["scales"]["drag_m2"])
+    return results["windows"] | {"battery": results["battery"], "linked": results["linked"], "family_pairs": pairs}
+
+
+def pair_interval(a, b):
+    """Calibrated drag of car a minus car b: estimate and the two half-widths, combined in quadrature."""
+    estimate = a["estimate"] - b["estimate"]
+    below = np.hypot(a["estimate"] - a["sim95_low"], b["sim95_high"] - b["estimate"])
+    above = np.hypot(a["sim95_high"] - a["estimate"], b["estimate"] - b["sim95_low"])
+    return estimate, below, above
+
+
+def family_pairs(start, n, scale):
+    """Two cars with one engine level, each with its own hidden strategy, CdA and race. Does the drag difference's
+    interval, built from the two calibrated per-car intervals, cover the true difference? A failed fit counts as
+    uncovered."""
+    strategies = (*STRATEGIES, "switching")
+    scores, z, widths = [], [], []
+    for i in range(n):
+        rng = np.random.default_rng(start + i)
+        level = rng.uniform(370, 420)
+        cars = []
+        for k in range(2):
+            seed = start + 100000 + 2*i + k
+            fit = [r for r in experiment(seed, strategies[rng.integers(len(strategies))], True, level)
+                   if r.get("model") == "linked" and r.get("quantity") == "drag_m2" and "failure" not in r]
+            if not fit:
+                break
+            q = fit[0]
+            p = q["estimate"]
+            cars.append(dict(estimate=p, truth=q["truth"], sim95_low=p - scale*(p - q["low"]),
+                             sim95_high=p + scale*(q["high"] - p)))
+        if len(cars) < 2:
+            scores.append(np.inf)
+            continue
+        estimate, below, above = pair_interval(*cars)
+        error = estimate - (cars[0]["truth"] - cars[1]["truth"])
+        half = below if error >= 0 else above
+        scores.append(abs(error) / max(half, 1e-9))
+        z.append(cv.Z95 * np.sign(error) * scores[-1])
+        widths.append(below + above)
+    scores = np.asarray(scores)
+    covered = float(np.mean(scores <= 1))
+    sm = cv.summary(z)
+    return dict(pairs=n, covered_pairs=int((scores <= 1).sum()), cover_95=covered, sd_z=sm["sd_z"],
+                mean_z=sm["mean_z"], median_width=float(np.median(widths)) if widths else None,
+                calibrated=cv.calibrated(sm | {"cover_95": covered}))
 
 
 def assess(cal, audit, n_cal, n_audit, cal_fail, audit_fail):

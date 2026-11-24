@@ -10,6 +10,7 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from . import coverage as cv
@@ -65,13 +66,7 @@ def session_rows(results: dict | None, grip_rel: pd.DataFrame, pace_cars: pd.Dat
     rows = []
 
     def add(model, name, label, bench, est, se, unit):
-        ok = bool(bench and bench["calibrated"])
-        spread = float(pd.Series(est).std()) if len(est) > 1 else 0.0
-        rows.append({"model": model, "quantity": name, "label": label, "unit": unit,
-                     "bench_cover_95": None if not bench else bench["cover_95"],
-                     "bench_sd_z": None if not bench else bench["sd_z"], "calibrated": ok,
-                     "status": cv.resolution(est, se, ok), "median_se": float(pd.Series(se).median()),
-                     "spread": spread})
+        rows.append(_row(model, name, label, bench, est, se, unit))
 
     g = (results or {}).get("grip", {}).get("confounders", {})
     for q, label in GRIP_QUANTITIES.items():
@@ -82,4 +77,44 @@ def session_rows(results: dict | None, grip_rel: pd.DataFrame, pace_cars: pd.Dat
     est = pd.concat([others[s] for s in ("s1", "s2", "s3")]).to_numpy()
     se = pd.concat([others[f"{s}_se"] for s in ("s1", "s2", "s3")]).to_numpy()
     add("pace", "sectors", PACE_QUANTITIES["sectors"], p.get("sectors"), est, se, "s")
+    return rows
+
+
+def _row(model, name, label, bench, est, se, unit, groups=None) -> dict:
+    ok = bool(bench and bench["calibrated"])
+    return {"model": model, "quantity": name, "label": label, "unit": unit,
+            "bench_cover_95": None if not bench else bench["cover_95"],
+            "bench_sd_z": None if not bench else bench["sd_z"], "calibrated": ok,
+            "status": cv.resolution(est, se, ok, groups), "median_se": float(pd.Series(se).median()),
+            "spread": float(pd.Series(est).std()) if len(est) > 1 else 0.0}
+
+
+def _relative(estimate: np.ndarray, se: np.ndarray, groups: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Each estimate minus its group's mean, with the mean's own uncertainty (independent estimates)."""
+    rel, rel_se = np.empty(len(estimate)), np.empty(len(estimate))
+    for g in np.unique(groups):
+        k = groups == g
+        m = k.sum()
+        rel[k] = estimate[k] - estimate[k].mean()
+        rel_se[k] = np.sqrt(se[k]**2 * (1 - 2/m) + np.sum(se[k]**2) / m**2)
+    return rel, rel_se
+
+
+def drag_rows(intervals: list[dict], team_of: dict, families: dict, car_bench: dict | None,
+              pair_bench: dict | None) -> list[dict]:
+    """S4's effective straight-mode drag area: each car against the field, and against the cars that share its
+    engine, whose combustion power cancels. The calibrated 95% intervals become standard errors."""
+    family_of = {team: family for family, teams in families.items() for team in teams}
+    d = pd.DataFrame(intervals)
+    d["family"] = d.driver.map(team_of).map(family_of)
+    d["se"] = (d.sim95_high - d.sim95_low) / (2 * cv.Z95)
+    rows = []
+    est, se = _relative(d.estimate.to_numpy(), d.se.to_numpy(), np.zeros(len(d)))
+    rows.append(_row("S4", "drag", "Drag area, each car", car_bench, est, se, "m²"))
+    shared = d[d.family.notna() & d.family.duplicated(keep=False)]
+    if len(shared):
+        groups = shared.family.to_numpy()
+        est, se = _relative(shared.estimate.to_numpy(), shared.se.to_numpy(), groups)
+        rows.append(_row("S4", "drag_family", "Drag area against same-engine cars", pair_bench, est, se, "m²",
+                         groups))
     return rows

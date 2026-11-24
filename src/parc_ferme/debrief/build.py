@@ -223,6 +223,10 @@ def build(s: Session) -> dict:
         d["state_fit"] = state.study(s.car_data, t, g.model, sim_car, d["car_model"])
         try:
             d["energy_fit"] = energy.study(s, channels.SIM_FUEL_KG, d["code"])
+            fit = d["energy_fit"]
+            d["identifiability"]["rows"] += identifiability.drag_rows(
+                fit["drag"], {code: car["team"] for code, car in cars.items()}, rules()["power_unit_families"],
+                fit["bench"].get("drag_m2"), fit["bench_family"])
         except ValueError as err:
             d["energy_unavailable"] = str(err)
     d["summary"] = summary.findings(d)
