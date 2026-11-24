@@ -12,6 +12,8 @@ from importlib.resources import files
 import numpy as np
 import pandas as pd
 
+from .ers import deploy_fraction_array
+
 RHO_AIR = 1.20
 G = 9.81
 KPH = 1 / 3.6
@@ -86,10 +88,8 @@ class Car:
         return 1e3 * self.rules["power_unit"]["mgu_k_kw"]
 
     def mguk_limit_w(self, v: np.ndarray) -> np.ndarray:
-        """MGU-K deployment cap at speed v [m/s]: full power, then a linear taper to zero."""
-        pu = self.rules["power_unit"]
-        a, b = pu["mgu_k_taper_start_kph"] * KPH, pu["mgu_k_taper_end_kph"] * KPH
-        return self.mguk_w * np.clip((b - np.asarray(v)) / (b - a), 0.0, 1.0)
+        """MGU-K deployment cap at speed v [m/s] (FIA C5.2.8, Overtake not active)."""
+        return self.mguk_w * deploy_fraction_array(v)
 
     def aero(self, straight: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         return (np.where(straight, self.cda_straight, self.cda_corner),

@@ -11,7 +11,7 @@ def test_fuel_clips_timing_lines_and_obeys_rpm_ceiling():
     for rpm, cap in ((8000, 2325.), (11500, 3000.)):
         kg, covered = fuel(t, np.full(len(t), 100), np.full(len(t), rpm), 3.)
         assert covered == pytest.approx(1.)
-        assert kg[1] == pytest.approx(.95 * cap * 3/3600/43)
+        assert kg[1] == pytest.approx(.95 * cap * 3/3600/39.5)
         assert kg[0] < kg[1] < kg[2]
         assert interval(kg, 1) == pytest.approx(kg)
     kg, _ = fuel(t, np.zeros(len(t)), np.zeros(len(t)), 3.)
@@ -71,7 +71,7 @@ def test_fuel_bins_integrate_a_ramp_at_the_lines_and_keep_the_partial_second():
     duration = 2.35
     kg, coverage, p = estimate_fuel(t, 30+10*t, np.full(len(t), 11000.), duration, with_profile=True)
     edges = np.array([0., 1., 2., duration])
-    primitive = 3000/3600/43*((.015+.935*.30)*edges + .5*.935*.1*edges**2)
+    primitive = 3000/3600/39.5*((.015+.935*.30)*edges + .5*.935*.1*edges**2)
     assert coverage == pytest.approx(1.)
     assert p["missing"] == []
     assert np.cumsum(p["mg"])/1e6 == pytest.approx(primitive[1:], abs=.5e-6)

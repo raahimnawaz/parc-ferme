@@ -12,6 +12,7 @@ import pandas as pd
 from numba import njit
 
 from ..core.car import Car, G
+from ..core.ers import deploy_fraction
 from ..core.track import Track
 
 VMAX = 120.0
@@ -44,7 +45,7 @@ class Lap:
 
 
 @njit(cache=True)
-def qss_speed(k, grade, ds, cla_c, cda_c, cla_z, cda_z, m, mu, roll, eff, ice_w, mguk_w, taper_a, taper_b,
+def qss_speed(k, grade, ds, cla_c, cda_c, cla_z, cda_z, m, mu, roll, eff, ice_w, mguk_w,
               half_rho, v_star, n_iter=3):
     """Quasi-steady speed at each point of a closed path. Segment i runs from point i to i+1 with length ds[i].
     Forward passes are power- and grip-limited (straight-mode aero where zoned); backward passes are grip-limited
@@ -65,7 +66,7 @@ def qss_speed(k, grade, ds, cla_c, cda_c, cla_z, cda_z, m, mu, roll, eff, ice_w,
             f_long = np.sqrt(max(f_grip * f_grip - f_lat * f_lat, 0.0))
             p = ice_w
             if vv < v_star:
-                p += mguk_w * min(max((taper_b - vv) / (taper_b - taper_a), 0.0), 1.0)
+                p += mguk_w * deploy_fraction(vv)
             f = min(eff * p / max(vv, VMIN), f_long)
             a = (f - half_rho * cda_z[j] * vv * vv - roll - m * G * grade[j]) / m
             v[i] = min(v[i], np.sqrt(max(vv * vv + 2.0 * a * ds[j], VMIN * VMIN)), v_corner[i])
@@ -83,10 +84,8 @@ def qss_speed(k, grade, ds, cla_c, cda_c, cla_z, cda_z, m, mu, roll, eff, ice_w,
 def kernel_args(car: Car, zones: np.ndarray) -> tuple:
     cda_c, cla_c = car.aero(np.zeros(len(zones), bool))
     cda_z, cla_z = car.aero(zones)
-    pu = car.rules["power_unit"]
     return (cla_c.astype(float), cda_c.astype(float), cla_z.astype(float), cda_z.astype(float), car.mass, car.mu,
-            car.crr * car.mass * G, car.driveline_eff, car.ice_w, car.mguk_w,
-            pu["mgu_k_taper_start_kph"] / 3.6, pu["mgu_k_taper_end_kph"] / 3.6, 0.5 * car.rho)
+            car.crr * car.mass * G, car.driveline_eff, car.ice_w, car.mguk_w, 0.5 * car.rho)
 
 
 def _speed_profile(line: Track, car: Car, zones: np.ndarray, v_star: float) -> np.ndarray:

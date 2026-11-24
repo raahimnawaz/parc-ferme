@@ -9,6 +9,7 @@ import pandas as pd
 from numba import njit
 
 from ..core.car import Car, G
+from ..core.ers import deploy_fraction
 from ..core.track import Track
 from ..models.energy import held_out, windows
 from ..models.energy_fit import profile
@@ -21,7 +22,7 @@ def fingerprint():
     root = Path(__file__).resolve().parents[1]
     digest = hashlib.sha256()
     for name in ("bench/energy.py", "bench/coverage.py", "models/energy.py", "models/energy_fit.py",
-                 "models/battery.py", "core/car.py", "core/rules_2026.toml"):
+                 "models/battery.py", "core/car.py", "core/ers.py", "core/rules_2026.toml"):
         digest.update((root / name).read_bytes())
     return digest.hexdigest()
 
@@ -42,13 +43,13 @@ STRATEGIES = ("clip", "early_taper", "harvest", "partial")
 
 @njit(cache=True)
 def drive_sector(entry, soc, recovered, mass, ice, grade, aero, wind, strength, knee, harvest, lift, mode, apex,
-                 dt, capacity, budget, eta, regen, machine, taper_start, taper_end):
+                 dt, capacity, budget, eta, regen, machine):
     """Forward dynamics. The caller carries speed and store charge across every timing line."""
     v, s, energy = np.empty(341), np.zeros(341), np.zeros(341)
     v[0] = entry
     for i in range(340):
         time, speed = i*dt, v[i]
-        cap = machine * min(1., max(0., (taper_end-speed)/(taper_end-taper_start)))
+        cap = machine * deploy_fraction(speed)
         if mode == 0:
             k = strength*cap*(time < knee)
         elif mode == 1:
@@ -105,7 +106,6 @@ def experiment(seed, strategy, paired=False):
     winds = rng.normal(0, 2., 4)
     knees = rng.uniform(2, 9, 4)
     tick_grid = np.arange(2, len(t)-1, 5)
-    pu = car.rules["power_unit"]
     for j, lap in enumerate(lap_ids):
         recovered = 0.
         for zone, ref in enumerate(refs):
@@ -116,8 +116,7 @@ def experiment(seed, strategy, paired=False):
             v, s, energy, soc, recovered = drive_sector(
                 entry, soc, recovered, mass[j], ice[j], grades[zone]+car.crr, .5*car.rho*cda*tow, wind,
                 rng.uniform(.65, 1), knees[zone]+rng.normal(0, 1.2), rng.uniform(70, 260), lift, mode,
-                rng.uniform(42, 48), dt, capacity, budget, car.driveline_eff, car.regen_eff, car.mguk_w/1000,
-                pu["mgu_k_taper_start_kph"]/3.6, pu["mgu_k_taper_end_kph"]/3.6)
+                rng.uniform(42, 48), dt, capacity, budget, car.driveline_eff, car.regen_eff, car.mguk_w/1000)
             entry = v[-1]
             if held_out(lap):
                 continue

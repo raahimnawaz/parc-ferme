@@ -19,16 +19,16 @@ def estimate_fuel(t, throttle, rpm, duration, *, with_profile=False):
     """Integrate assumed load maps against the FIA RPM ceiling, clipping segments at the timing lines."""
     mass = rules()["mass"]
     full = mass["fuel_energy_flow_mj_per_h"]
-    lhv = mass["fuel_lhv_mj_per_kg"]
+    lhv, lhv_low, lhv_high = (mass[f"fuel_lhv{k}_mj_per_kg"] for k in ("", "_min", "_max"))
     pedal = np.asarray(throttle, float) / 100
     rpm = np.asarray(rpm, float)
     valid = (pedal >= 0) & (pedal <= 1) & (rpm >= 0) & (rpm <= rules()["power_unit"]["rev_limit_rpm"])
     pedal = np.clip(pedal, 0., 1.)
     cap = np.where(rpm > 0, np.minimum(full, .27*rpm + 165), 0.) / 3600
     # The ECU's actual fuel map is private. The centre and both limiting scenarios are assumed.
-    rates = np.array([cap * .78 * pedal**1.5 / 45,
+    rates = np.array([cap * .78 * pedal**1.5 / lhv_high,
                       cap * (.015 + .935*pedal) / lhv,
-                      cap * (.08 + .92*np.sqrt(pedal)) / 41])
+                      cap * (.08 + .92*np.sqrt(pedal)) / lhv_low])
     delta = np.diff(t)
     left, right = np.maximum(0., t[:-1]), np.minimum(duration, t[1:])
     ok = valid[:-1] & valid[1:] & (delta > 0) & (delta <= MAX_GAP_S) & (right > left)
@@ -40,7 +40,7 @@ def estimate_fuel(t, throttle, rpm, duration, *, with_profile=False):
     kg = ((rates[:, :-1][:, ok] + np.diff(rates)[:, ok]*mid) * span).sum(axis=1)
     # Unobserved time permits zero to maximum flow. The centre uses the observed time average.
     kg[1] *= duration/covered
-    kg[2] += max(0., duration-covered)*full/3600/41
+    kg[2] += max(0., duration-covered)*full/3600/lhv_low
     profile = None
     if with_profile:
         slope = np.diff(rates[1])[ok] / delta[ok]
