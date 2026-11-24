@@ -191,7 +191,7 @@ check reconstruction at known drag. The multi-lap fit uses the same window balan
 configured zones. One effective straight-mode CdA is shared across each car's training
 laps. Each window has its own signed electric shaft power. The model assumes 400 kW of
 combustion power, 95% driveline efficiency, 20 kg of fuel by default, a 350 kW harvest
-limit and the speed-dependent deployment cap in the rules file. A 50 kW wheel-work
+limit and the deployment cap against speed of FIA Art. C5.2.8 (`core/ers.py`). A 50 kW wheel-work
 allowance and a 15% aero-work allowance represent sensitivity to fuel, shifts, wind,
 traffic and the engine map. These allowances are modelling choices.
 
@@ -207,7 +207,7 @@ windows. The battery balance constrains those windows using the rest of the lap.
 The ledger covers the timing line to the timing line. At each segment the store gains
 85% of harvested shaft work or spends deployed shaft work (unit discharge efficiency).
 Charge stays within the configured 4 MJ window and recovered energy within the configured
-8.5 MJ per lap. Both are model inputs from the project's rules file. The independent-lap control has free start and end charges on every lap. The linked fit has
+8.5 MJ per lap (FIA Art. C5.2.9 and C5.2.10). The independent-lap control has free start and end charges on every lap. The linked fit has
 free endpoints only at the ends of a consecutive sequence. Inside it, the end charge of
 one lap is the start charge of the next. The recovery budget resets at every timing line.
 
@@ -266,10 +266,10 @@ laps in one sequence. Stroll had fewer than five training laps.
 
 | Median calibrated 95% interval width | Independent laps | Linked laps | Intervals narrowed |
 | --- | ---: | ---: | ---: |
-| Effective drag area | 0.532 m² | 0.532 m² | 0/21 |
-| Zone-average signed electric power | 229.0 kW | 229.0 kW | 0/84 |
+| Effective drag area | 0.600 m² | 0.600 m² | 0/21 |
+| Zone-average signed electric power | 239.4 kW | 239.4 kW | 0/84 |
 
-All drag intervals share an overlap. In 77 of 84 driver-zone intervals, both harvest and
+All drag intervals share an overlap. In 78 of 84 driver-zone intervals, both harvest and
 deployment remain plausible. Raw widths also agreed to numerical precision. Compare the
 two columns on this split: the earlier individual-lap holdout at `bf8c778` used a different
 training sample and calibration.
@@ -290,6 +290,46 @@ endpoints and rollouts to `reports/11307/`. In `energy_linked_balance.csv`, each
 records the sequence, start and end charge, and recovered and spent energy for **one
 feasible history**. `energy_lap_balance.csv` retains the independent-lap phase limits at
 the representative drag. The fit, split and exclusions are in `energy_fit.json`.
+Widths are from `ff959d1`, after the deployment curve and fuel heating value were taken from
+the FIA text (they were 0.532 m² and 229.0 kW with the press-reported linear taper to 355 km/h).
+
+### Drag upper bound above the MGU-K cutoff (measured: not binding at Barcelona)
+
+From 345 km/h the MGU-K may not propel the car (FIA C5.2.8 i), or from 355 km/h with Overtake
+active (ii). At full throttle the wheels then get at most the combustion engine's power, so a
+run's work balance gives an upper bound on effective straight-mode drag area that doesn't
+depend on the battery model. Every unknown takes its loosening value: 430 kW engine (an
+estimate: 51.6% brake efficiency on the 3000 MJ/h fuel flow), 97% driveline, rolling
+coefficient 0.008, 768 kg (848 kg when the car slows), speeds 1 km/h off in the loosening
+direction, and the station's highest wind within 3 minutes taken as a full tailwind. Runs
+closer than 3 s behind any car on the road are left out, since a tow lowers drag below the
+car's own. Overtake is active on a lap only if the car crossed the Detection Line less than
+the Detection Gap behind another car (Sporting B7.2.3 c). The line's position isn't public,
+so a run counts as normal mode only if the car stayed more than 1 s behind every car for the
+1.5 laps before it; otherwise the Overtake curve is allowed. `parc-ferme energy 11307 --fit`
+prints the check and writes `reports/11307/drag_bound.csv`; `models/drag_bound.py` has the
+estimator and `tests/test_drag_bound.py` checks it holds on 300 synthetic runs with harvest,
+part load, wind and rounding, and is tight within 2% when every unknown sits at its limit.
+
+Cars almost only exceed 345 km/h in a tow: of 1,656 samples, the median gap to the car ahead is
+0.6 s and 45 are more than 3 s clear. They form six runs (BEA, BOR, GAS, HUL, PER, SAI). All six
+had been within 1 s of another car in the 1.5 laps before, mostly while being lapped, so
+Overtake can't be ruled out.
+
+| Car | Bound, Overtake allowed | Bound if normal mode | S4 95% upper end |
+| --- | ---: | ---: | ---: |
+| BOR (Audi) | 1.08 m² | 0.84 m² | 0.56 m² |
+| PER (Cadillac) | 1.29 m² | 0.97 m² | 0.74 m² |
+| SAI (Williams) | 1.35 m² | 0.96 m² | 0.78 m² |
+| HUL (Audi) | 1.39 m² | 0.97 m² | 0.69 m² |
+| GAS (Alpine) | 1.45 m² | 1.07 m² | 0.66 m² |
+| BEA (Haas) | 1.48 m² | 1.11 m² | 0.67 m² |
+
+The bound holds and S4 sits below it for every car, so S4's drag isn't too high, but it
+narrows no interval here even if normal mode were confirmed. It can bind only where cars run
+untowed well above 345 km/h and S4's intervals are wider: Mexico City (676 race samples at
+355 km/h or more) and Las Vegas (155) are the places to retry it. The FIA's event notes for a
+circuit give the Detection Line, which would settle the Overtake question per run.
 
 ### S5 fuel and longitudinal acceleration
 

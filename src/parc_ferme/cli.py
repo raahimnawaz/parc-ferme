@@ -141,6 +141,29 @@ def energy_fit(args) -> int:
           f"Speed MAE {err['joint']['mae_kph']:.2f} km/h "
           f"(local baseline {err['local_speed_gain']['mae_kph']:.2f}).")
     print(f"report: {out / 'energy_fit.json'}")
+    return drag_check(args.session_key, out)
+
+
+def drag_check(session_key, out) -> int:
+    """Check S4's drag intervals against the power bound from untowed running above the MGU-K cutoff."""
+    import pandas as pd
+
+    from .models.drag_bound import MIN_KPH, per_car, runs
+
+    table = runs(Session(session_key))
+    if table.empty:
+        print(f"drag bound: no untowed full-throttle run above {MIN_KPH:.0f} km/h")
+        return 0
+    table.to_csv(out / "drag_bound.csv", index=False)
+    s4 = pd.read_csv(out / "energy_intervals.csv")
+    s4 = s4[s4.quantity == "drag_m2"].set_index("driver").sim95_high
+    print(f"drag bound from {len(table)} untowed runs above {MIN_KPH:.0f} km/h (report: {out / 'drag_bound.csv'})")
+    for r in per_car(table).itertuples():
+        upper = s4.get(r.driver, float("nan"))
+        verdict = "S4 above the bound" if upper > r.bound_m2 else "S4 below the bound"
+        mode = "Overtake allowed" if r.overtake_possible else "normal mode"
+        print(f"  {r.driver}  CdA <= {r.bound_m2:.2f} m² ({mode}, {r.runs} run{'s' * (r.runs > 1)}); "
+              f"S4 95% upper {upper:.2f}: {verdict}")
     return 0
 
 
