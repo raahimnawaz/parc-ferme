@@ -29,7 +29,7 @@ as OpenF1-shaped telemetry and run through the same code as real laps.
 |---|---|
 | Track geometry | The 2026 layout from the timing feed: every car's green-lap positions (1,052 laps) averaged by lap fraction, with elevation (30 m range). The TUMFTM centreline is the pre-2021 layout at Turn 10 and the final sector, so it supplies track width only where it matches (67% of the lap). |
 | Racing line | Minimum lap time, not minimum curvature. The offset from the reference is searched against the lap sim's own lap time, coarse to fine, from the minimum-curvature line. The gain is 2.0 s (2.6%) for the same car, concentrated at Turn 9 onto the back straight and the Turn 1–2 sequence. |
-| Car | 2026 rules from `core/rules_2026.toml` (768 kg, 400 kW ICE, 350 kW MGU-K with its taper above 290 km/h, 8.5 MJ harvest per lap), straight mode only in the FIA zones, road grade, air density from the session's weather. S3 fits grip and corner downforce. S4 bounds effective drag jointly with deployment. |
+| Car | 2026 rules from `core/rules_2026.toml` (768 kg, 400 kW ICE, 350 kW MGU-K tapering above 290 km/h to zero at 345, 8.5 MJ harvest per lap; values cite the FIA 2026 Section C articles), straight mode only in the FIA zones, road grade, air density from the session's weather. S3 fits grip and corner downforce. S4 bounds effective drag jointly with deployment. |
 | Lap sim | Quasi-steady point mass, compiled with Numba (0.3 ms per lap). The MGU-K deploys below a threshold speed chosen so the lap spends exactly what it harvests. |
 
 Against Hamilton's fastest race lap (lap 44, 80.122 s) the nominal car runs 74.17 s with a speed-trace correlation
