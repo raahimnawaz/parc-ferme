@@ -12,7 +12,9 @@ session 11307) unless stated, and estimates are marked as such.
 2. **Physics fixes what physics knows.** Mass, the power-unit limits, air density and the lap-time cost of fuel come
    from the rules, the weather and the lap sim, not from a fit.
 3. **Compare like with like, so shared unknowns cancel.** Teams against the field at the same corner (the corner
-   radius cancels); drag only within a power-unit family (the engine power cancels).
+   radius cancels). For drag the closest pair is two teammates, who share the car, engine and fuel, so their
+   disagreement measures the estimator's noise. Cars that share an engine can use different fuel, so even engine
+   power may not cancel, and battery use doesn't: comparing their drag resolved nothing at Barcelona (S4 below).
 4. **Bench before page.** A parameter goes on the page only if the test bench recovers it and its stated interval
    covers the true value at the stated rate, with the confounders below switched on: deployment strategies,
    clipping, lift-and-coast, fuel, tyre wear, track evolution, traffic.
@@ -27,16 +29,19 @@ wheel speeds, ride heights, loads, brake pressure or battery state.
 | Wanted | Confounded with | What separates it | What is reported |
 |---|---|---|---|
 | Tyre grip vs downforce (S3) | Each other | Speed dependence: slow corners mostly tyre grip, fast corners grip × downforce | Grip in slow and fast corners, about 1% (done). The split only where its interval excludes zero (Audi at Barcelona) |
-| Drag (S4) | Deployed power, clipping, derating, and regen while coasting | Stretches with different power at the same drag: the clipping knee at constant throttle, ICE-only running after the battery empties, terminal speed. ICE power from the rules | Drag relative to teams with the same power unit. Across power units, drag-to-power ratio. Absolute drag only as a wide interval |
+| Drag (S4) | Deployed power, clipping, derating, and regen while coasting | Stretches with different power at the same drag: the clipping knee at constant throttle, ICE-only running after the battery empties, no deployment from 345 km/h, terminal speed. ICE power is a design target, not a rule | Each car's drag as a calibrated interval. At Barcelona it isn't resolved, per car or against cars with the same engine, and the bound from running above 345 km/h doesn't bind (measured, S4 below). A drag-to-power ratio across engines isn't built: it would cancel the engine the same way and leave the battery (estimate) |
 | Deployment (S4) | Drag | As above | Where each team deploys, harvests and clips, per straight. Total energy as an interval |
 | Fuel effect (S5) | Track evolution | Nothing in the data: both follow race lap for every car | Fixed from physics, labelled a model estimate. What's left of the race-lap trend is track evolution |
 | Tyre degradation (S6) | Fuel and evolution within a stint, where tyre age and race lap rise together | Pit stops reset tyre age while race lap keeps rising; cars on the same compound at different points of the race | Performance loss per compound per team, net of the physics fuel effect. Thermal and wear are not separated (no temperatures), so it is one curve |
 
 **Power-unit families in 2026.** Mercedes: Mercedes, McLaren, Williams, Alpine. Ferrari: Ferrari, Haas, Cadillac. Red
 Bull Ford: Red Bull Racing, Racing Bulls. Honda: Aston Martin. Audi: Audi. Customers receive the same power-unit
-specification, so within a family the ICE power is taken as equal and relative drag becomes measurable. Fuel
-suppliers can differ within a family, so that is an assumption, carried as an interval. Across families, drag and
-engine power can't be told apart from speed traces.
+specification, so comparing drag within a family cancels the engine power if the fuel is the same too. Suppliers can
+differ within a family, so equal power is an assumption, carried as an interval. Even granted, it doesn't make
+relative drag measurable: at Barcelona the engine was about a sixth of each car's drag uncertainty, and most of the
+rest is its battery use, set by team strategy and driver, which differs from car to car and doesn't cancel
+(measured, S4 below). Teammates show it: same car, engine and fuel, and their estimates still disagree by more
+than teams sharing an engine do. Across families, drag and engine power can't be told apart from speed traces.
 
 **Evidence at Barcelona.**
 
