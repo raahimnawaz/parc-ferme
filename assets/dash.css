@@ -227,3 +227,19 @@ table { border-collapse: collapse; width: 100%; }
   .pb-row { grid-template-columns: 18px 2px 90px minmax(0, 1fr) 64px; gap: 6px; }
   .pb-row .nm small, .vv small { display: none; } .gr-row { grid-template-columns: 100px minmax(0, 1fr); } .zoom { margin-left: 0; }
 }
+
+/* Fuel workspace */
+#s5-stints { display: flex; position: relative; touch-action: pan-y; user-select: none; min-height: 37px; }
+#s5-stints button { flex-basis: 0; min-width: 0; padding: 3px 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+  color: var(--ink2); background: var(--raise); border: 0; border-right: 1px solid var(--axis); cursor: pointer; }
+#s5-stints button:hover, #s5-stints button[aria-pressed="true"] { color: var(--ink); background: #202020; }
+#s5-stints button:focus-visible { outline-offset: -2px; }
+.s5-selection-bar { position: absolute; bottom: 0; height: 3px; background: var(--s5-team); pointer-events: none; }
+#s5-selection { margin-top: 6px; }
+.s5-values { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 8px 14px; margin: 0; }
+.s5-values dt { color: var(--ink2); font-size: 13px; }
+.s5-values dd { margin: 2px 0 0; font: 300 18px var(--data); color: var(--ink); }
+.s5-dash { display: inline-block; vertical-align: middle; width: 19px; margin-right: 4px; border-top: 2px dashed var(--s5-team); opacity: .72; }
+#ws-state .u-over { cursor: crosshair; }
+#ws-state .card-h { flex-wrap: wrap; }
+@media (max-width: 640px) { .s5-values { grid-template-columns: repeat(2,minmax(0,1fr)); } }

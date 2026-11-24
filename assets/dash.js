@@ -427,62 +427,7 @@
   $$('[data-lap]').forEach(b => b.addEventListener('click', () => { state.lap = b.dataset.lap; $$('[data-lap]').forEach(x => x.classList.toggle('on', x === b)); render(); }));
   $('#simOn').addEventListener('change', e => { state.sim = e.target.checked; render(); });
   $$('[data-map]').forEach(b => b.addEventListener('click', () => { state.map = b.dataset.map; $$('[data-map]').forEach(x => x.classList.toggle('on', x === b)); drawMap(); onCursor(); }));
-  // S5 uses native telemetry sample times. Fuel and acceleration have different horizontal axes.
-  let stateCharts = [];
-  function stateChart(id, x, low, mid, high, xUnit, colour, selectedLap) {
-    const target = $(id);
-    const chart = new uPlot({
-      width: Math.max(240, target.clientWidth), height: 185,
-      scales: { x: { time: false } }, legend: { show: false },
-      axes: [{ ...axisX(true), values: (_, xs) => xs.map(v => xUnit ? v + xUnit : String(v)) }, axisY()],
-      series: [{}, line('transparent'), line('transparent'), line(colour, {width: 1.5})],
-      bands: [{ series: [1, 2], fill: alpha(colour, .17) }],
-      hooks: { draw: selectedLap == null ? [] : [u => {
-        const xPos = u.valToPos(selectedLap, 'x', true);
-        u.ctx.save(); u.ctx.strokeStyle = '#aaa'; u.ctx.setLineDash([3, 4]);
-        u.ctx.beginPath(); u.ctx.moveTo(xPos, u.bbox.top); u.ctx.lineTo(xPos, u.bbox.top + u.bbox.height);
-        u.ctx.stroke(); u.ctx.restore();
-      }] },
-    }, [x, high, low, mid], target);
-    if (selectedLap != null) chart.over.addEventListener('click', ev => {
-      const select = $('#s5-lap');
-      const lapNumber = Math.round(chart.posToVal(ev.clientX-chart.over.getBoundingClientRect().left, 'x'));
-      if ([...select.options].some(o => Number(o.value) === lapNumber)) {
-        select.value = String(lapNumber); drawState();
-      }
-    });
-    stateCharts.push(chart);
-  }
-  function drawState(changeDriver = false) {
-    if (!D.stateFit || $('#ws-state').hidden) return;
-    const code = $('#s5-driver').value, laps = D.stateFit.drivers[code], select = $('#s5-lap');
-    if (changeDriver || !select.options.length) {
-      select.replaceChildren(...laps.map(r => new Option(String(r.lap), String(r.lap))));
-      const fastest = D.cars[code]?.fastest?.lap;
-      if (laps.some(r => r.lap === fastest)) select.value = String(fastest);
-    }
-    const lap = laps.find(r => r.lap === Number(select.value));
-    const fmt = (a, digits, unit) => a ? a[1].toFixed(digits) + ' ' + unit + ' (' +
-      a[0].toFixed(digits) + '–' + a[2].toFixed(digits) + ')' : '—';
-    $('#s5-lap-values').innerHTML = '<tr><td>' + lap.lap + ' · ' + esc(lap.status || lap.phase) +
-      '</td><td class="n">' + fmt(lap.burn, 3, 'kg') + '</td><td class="n">' + fmt(lap.gain_ms, 1, 'ms') +
-      '</td><td class="n">' + (lap.start_gain_s == null ? '—' : lap.start_gain_s.toFixed(3) + ' s') + '</td></tr>';
-    stateCharts.forEach(chart => chart.destroy()); stateCharts = [];
-    const c = lift(D.cars[code]?.colour || '#9cbce0');
-    const field = i => laps.map(r => r.burn?.[i] ?? null);
-    stateChart('#s5-fuel-chart', laps.map(r => r.lap), field(0), field(1), field(2), '', c, lap.lap);
-    const target = $('#s5-accel-chart');
-    target.replaceChildren();
-    if (!lap.trace) { target.textContent = 'Insufficient speed samples for this lap.'; return; }
-    const a = lap.trace.cg.map(v => v == null ? null : v/100);
-    const band = v => D.stateFit.phases[v < 0 ? 'deceleration' : 'acceleration'].radius_g;
-    stateChart('#s5-accel-chart', lap.trace.ms.map(v => v/1000), a.map(v => v == null ? null : v-band(v)),
-      a, a.map(v => v == null ? null : v+band(v)), ' s', c);
-  }
-  if (D.stateFit) {
-    $('#s5-driver').addEventListener('change', () => drawState(true));
-    $('#s5-lap').addEventListener('change', () => drawState());
-  }
+  const drawState = D.stateFit ? createFuelWorkspace(D, { axisX, axisY, line, lift, alpha }) : () => {};
   function showWs(ws) {
     state.ws = ws;
     $$('.ws-tabs button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.ws === ws)));
