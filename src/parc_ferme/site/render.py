@@ -431,12 +431,15 @@ def identifiability_card(d: dict) -> str:
     b = idf.get("bench")
     if b:
         commit = b["commit"].rstrip("+")
+        note = (f'{b["grip_races"]} synthetic races for grip, {b["pace_races"]} for pace · measured on '
+                f'<a href="{REPO_URL}/commit/{e(commit)}">{e(b["commit"])}</a>')
         fit = d.get("energy_fit") or {}
         drag = (fit.get("bench") or {}).get("drag_m2")
-        pairs = fit.get("bench_family")
-        cars = f', {drag["cars"]} cars and {pairs["pairs"]} same-engine pairs for drag' if drag and pairs else ""
-        note = (f'{b["grip_races"]} synthetic races for grip, {b["pace_races"]} for pace{cars} · measured on '
-                f'<a href="{REPO_URL}/commit/{e(commit)}">{e(b["commit"])}</a>')
+        pairs, version = fit.get("bench_family"), fit.get("bench_version")
+        if drag and pairs and version:
+            label = version["commit"] + ("+" if version["dirty"] else "")
+            note += (f' · {drag["cars"]} cars and {pairs["pairs"]} same-engine pairs for drag · measured on '
+                     f'<a href="{REPO_URL}/commit/{e(version["commit"])}">{e(label)}</a>')
     else:
         note = "bench not run: intervals unchecked"
     pace = idf.get("pace", {})

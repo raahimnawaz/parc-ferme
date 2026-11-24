@@ -331,6 +331,47 @@ untowed well above 345 km/h and S4's intervals are wider: Mexico City (676 race 
 355 km/h or more) and Las Vegas (155) are the places to retry it. The FIA's event notes for a
 circuit give the Detection Line, which would settle the Overtake question per run.
 
+### Drag against same-engine cars (measured: not resolved at Barcelona)
+
+Two cars with the same engine, at the same point of a straight, satisfy
+
+    m_A a_A v - m_B a_B v = eta (P_e,A - P_e,B) - rho/2 (CdA_A - CdA_B) v^3 + small terms
+
+so the combustion power cancels (equal power within a family is an assumption: fuel suppliers differ) and
+each car's battery power P_e does not. Families are in `core/rules_2026.toml`: Mercedes (Mercedes,
+McLaren, Williams, Alpine), Ferrari (Ferrari, Haas, Cadillac), Red Bull Ford (Red Bull Racing, Racing Bulls),
+Honda (Aston Martin) and Audi.
+
+What the cancellation is worth, measured three ways:
+
+- On the real fit, moving the assumed engine from 370 to 430 kW shifts every car's raw drag interval by
+  0.10–0.14 m², nearly the same for all cars, against a median raw width of 0.69 m². The rest of the width
+  is each car's battery freedom, which a difference carries from both cars.
+- On the S4 bench, engine power explains 17% of the variance of the drag error. Most of the error is the
+  hidden deployment strategy: the midpoint reads 0.13 (harvest) to 0.29 m² (clip) low depending on it.
+  `parc-ferme bench --energy-only` now also audits 150 same-engine pairs, each car with its own hidden
+  strategy: the difference's interval, the two calibrated per-car intervals combined in quadrature, covered
+  150/150 (error ÷ stated 0.37, median width 1.35 m²). The bench's actual 95% error on a difference is
+  0.233 m².
+- Teammates drive the same car. Their S4 estimates differ by 0.011–0.290 m² (RMS 0.155; Red Bull 0.290,
+  Racing Bulls 0.286, Mercedes 0.228), which puts the estimator's real per-car noise at 0.110 m², more than
+  the bench implies. Teams sharing an engine differ by less: the spread of team means about their family's
+  mean is 0.055 m², F = 0.51 on 6 and 10 degrees of freedom, p = 0.79. Simulated on this layout (families of
+  4, 3, 2 and 1 teams, noise from the teammates), a true spread between teams of 3–5% of 0.6 m² is found
+  6–7% of the time at a 5% false-alarm rate, 13% (0.08 m²) 25% and 20% (0.12 m²) 50%.
+
+Model health's identifiability table carries both: "Drag area, each car" and "Drag area against same-engine
+cars", each car's calibrated 95% interval read as ±1.96 standard errors, relative values with the reference
+mean's own uncertainty and one degree of freedom lost per family. Both are not resolved (typical ± 0.15 m²
+against spreads of 0.10 and 0.09 m²). Re-tested with the bench's actual pair error instead of the stated
+intervals, the chi-square gives p = 0.03 ("interval only"), but that error is smaller than the teammates
+show, and the teammate test above, which assumes only that teammates share a car, finds nothing. The midpoints
+mostly encode where each car's ceiling binds: they correlate with the car's 95th-percentile window exit
+speed at ρ = −0.75 (its interval's top end at −0.82), and not with how often it ran in a tow (ρ = −0.02).
+At one circuit this route is closed, and pooling circuits doesn't reopen it: even if each team's relative
+drag held across circuits (changing wing levels break that), a 5% difference would be found 48% of the time
+after 15 circuits and 80% only after about 40, more than a season (simulated on the same layout).
+
 ### S5 fuel and longitudinal acceleration
 
 Each timed lap is cut at the timing lines. S5 integrates the RPM-dependent maximum fuel

@@ -72,7 +72,7 @@ def study(session, fuel_kg, version, out=None):
     power = params[params.quantity == "deployment_kw"]
     report.update(drag=[dict(driver=r.driver, estimate=float(r.estimate), sim95_low=float(r.sim95_low),
                              sim95_high=float(r.sim95_high)) for r in drag.itertuples()],
-                  bench_family=calibration.get("family_pairs"))
+                  bench_family=calibration.get("family_pairs"), bench_version=calibration.get("version"))
     report.update(drag_common_overlap=bool(drag.sim95_low.max() <= drag.sim95_high.min()),
                   deployment_includes_zero=int(((power.sim95_low <= 0) & (power.sim95_high >= 0)).sum()),
                   deployment_intervals=len(power),
